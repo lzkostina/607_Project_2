@@ -8,7 +8,7 @@ EPS = 1e-12
 def auto_regressive_cov(p: int, rho: float) -> np.ndarray:
     """
     Construct a covariance matrix Sigma with entries:
-        Sigma[j, k] = rho ** ||j - k||,   0 <= rho < 1
+        Sigma[j, k] = rho ** ||j - k||,   -1 < rho < 1
 
     Parameters:
     ----------
@@ -22,10 +22,10 @@ def auto_regressive_cov(p: int, rho: float) -> np.ndarray:
     Sigma : (p, p) ndarray (float64)
     """
 
-    if not isinstance(p, int) or p <= 0:
+    if not isinstance(p, int) or p < 1:
         raise ValueError("p must be a positive integer")
-    if not (0 <= rho < 1):
-        raise ValueError("rho must be in [0, 1)")
+    if not (-1 < rho < 1):
+        raise ValueError("rho must be in (-1, 1)")
     idx = np.arange(p)
 
     return rho ** np.abs(idx[:, None] - idx[None, :])
