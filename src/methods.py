@@ -58,12 +58,16 @@ def knockoffs_equicorr(X: np.ndarray, *, use_true_Sigma: np.ndarray | None = Non
 
     S = s * np.eye(p, dtype=np.float64) # S = s I, with s <= min(1, 2*lambda_min)
 
-    Sigma_inv = np.linalg.solve(Sigma_psd, np.eye(p))
+    # safe inverse
+    ridge = 0.0
+    if lambda_min_clamped < 1e-10:
+        ridge = 1e-8
+    Sigma_inv = np.linalg.solve(Sigma_psd + ridge * np.eye(p), np.eye(p))
 
     A = np.eye(p, dtype=np.float64) - (Sigma_inv @ S)  # A = I - Sigma^{-1} S  (p x p)
 
-    # M = 2S - S Sigma^{-1} S  (p x p), PSD by construction
-    M = 2.0 * S - (S @ Sigma_inv @ S)
+    # M = n * (2S - S Sigma^{-1} S)  (p x p), PSD by construction
+    M = n * (2.0 * S - (S @ Sigma_inv @ S))
 
     # Symmetrize
     M = 0.5 * (M + M.T)
