@@ -55,3 +55,83 @@ def test_ar1_cov_positive_definite_small_p():
         assert np.allclose(recon, S + 1e-12 * np.eye(S.shape[0]), rtol=1e-6, atol=1e-8)
 
 ########################## generate_design tests ###########################
+
+def test_generate_design_shapes_and_dtype_iid():
+    X = generate_design(n=50, p=20, mode="iid", rho=None, seed=123)
+    assert X.shape == (50, 20)
+    assert X.dtype == np.float64
+
+
+def test_generate_design_shapes_and_dtype_ar1():
+    X = generate_design(n=60, p=15, mode="ar1", rho=0.6, seed=42)
+    assert X.shape == (60, 15)
+    assert X.dtype == np.float64
+
+
+def test_generate_design_normalization_sqrt_n():
+    n, p = 80, 17
+    X = generate_design(n=n, p=p, mode="iid", rho=None, seed=7,
+                        normalize=True, norm_target="sqrt_n")
+    norms = np.linalg.norm(X, axis=0)
+    assert np.allclose(norms, np.sqrt(n), rtol=1e-10, atol=1e-10)
+
+
+def test_generate_design_normalization_unit_var():
+    n, p = 120, 10
+    X = generate_design(n=n, p=p, mode="iid", rho=None, seed=9,
+                        normalize=True, norm_target="unit_var")
+    # centered (approximately) and unit sample variance
+    col_means = X.mean(axis=0)
+    col_vars = X.var(axis=0, ddof=1)
+    assert np.allclose(col_means, 0.0, atol=5e-2)   # loose tolerance due to randomness
+    assert np.allclose(col_vars, 1.0, atol=5e-2)
+
+
+def test_generate_design_determinism():
+    X1 = generate_design(n=40, p=12, mode="iid", rho=None, seed=2024)
+    X2 = generate_design(n=40, p=12, mode="iid", rho=None, seed=2024)
+    assert np.array_equal(X1, X2)
+
+
+def test_generate_design_different_seeds_change_output():
+    X1 = generate_design(n=40, p=12, mode="iid", rho=None, seed=1)
+    X2 = generate_design(n=40, p=12, mode="iid", rho=None, seed=2)
+    # With high probability, they differ; if not, check a statistic
+    assert not np.array_equal(X1, X2)
+
+
+def test_generate_design_ar1_empirical_lag1_corr_matches_rho_sign():
+    n, p, rho = 400, 50, 0.7
+    X = generate_design(n=n, p=p, mode="ar1", rho=rho, seed=11)
+    # empirical column correlation matrix
+    C = np.corrcoef(X, rowvar=False)
+    # average lag-1 correlation across adjacent columns
+    lag1 = np.mean([C[j, j+1] for j in range(p-1)])
+    assert lag1 > 0.4  # coarse check: should be noticeably positive
+
+    # negative rho
+    rho = -0.7
+    Xn = generate_design(n=n, p=p, mode="ar1", rho=rho, seed=11)
+    Cn = np.corrcoef(Xn, rowvar=False)
+    lag1n = np.mean([Cn[j, j+1] for j in range(p-1)])
+    assert lag1n < -0.4  # should be noticeably negative
+
+
+def test_generate_design_invalid_mode_and_rho_requirements():
+    with pytest.raises(ValueError):
+        generate_design(n=10, p=5, mode="weird", rho=None)
+    # ar1 requires rho
+    with pytest.raises(ValueError):
+        generate_design(n=10, p=5, mode="ar1", rho=None)
+    # ar1 rho bounds
+    with pytest.raises(ValueError):
+        generate_design(n=10, p=5, mode="ar1", rho=1.0)
+    with pytest.raises(ValueError):
+        generate_design(n=10, p=5, mode="ar1", rho=-1.0)
+
+
+def test_generate_design_iid_ignores_rho():
+    # Ensure iid runs even if rho is set (you may emit a warning internally)
+    X = generate_design(n=30, p=8, mode="iid", rho=0.9, seed=5)
+    assert X.shape == (30, 8)
+
