@@ -190,107 +190,178 @@ def generate_errors(
     return eps
 
 
-def generate_full(n: int, p: int, rho: float, df: float,
-    sigma2: float | None = None,
-    snr: float | None = None,      # target SNR = (beta^T X^T X beta) / sigma2
-    beta_sparsity: int | None = None,  # None = dense; else exactly k nonzeros
-    beta_scale: float = 1.0,       # std of nonzero beta entries
-    center_X: bool = False,
-    standardize_X: bool = False,
+import numpy as np
+import math
+from typing import Optional, Sequence
+
+# assumes EPS, generate_design, and generate_errors are defined in the same module
+
+def generate_full(
+    n: int,
+    p: int,
+    *,
+    mode: str = "iid",                 # {"iid", "ar1"}
+    rho: float | None = None,          # required iff mode == "ar1"
+    df: float = math.inf,              # default Gaussian noise
+    # --- signal (paper-faithful defaults) ---
+    k: int = 30,                       # number of nonzeros in beta
+    A: float = 3.5,                    # amplitude of each nonzero
+    sign_mode: str = "random",         # {"random", "positive_only"}
+    support_indices: Optional[Sequence[int]] = None,  # optional fixed support
+    # --- design normalization ---
+    normalize: bool = True,
+    norm_target: str = "sqrt_n",       # {"sqrt_n", "unit_var"}
+    # --- RNG ---
     seed: int | None = None,
-    ):
+    # --- disallowed for this project (kept for explicit error) ---
+    snr: float | None = None,          # not supported with sigma2=1.0 enforced
+) -> tuple[np.ndarray, np.ndarray, np.ndarray, dict]:
     """
-    Generate (y, X, beta) for y = X beta + eps.
+    Generate (y, X, beta) for the linear model y = X beta + z with unit-variance noise.
 
-    Models:
-    -----
-    - Fixed noise: pass sigma2 (snr can be None).
-    - SNR targeting: pass snr (sigma2 can be None), we set
-        sigma2 = (beta^T X^T X beta) / snr
-      using the realized X and beta.
+    This implementation is tailored to the knockoffs reproduction:
+      - Design X: iid or AR(1) with column-wise normalization (default on)
+      - Beta: exactly k nonzeros with fixed amplitude ±A (random signs by default)
+      - Noise: Gaussian (df=inf) with variance 1.0 (enforced by generate_errors)
 
-    Returns:
+    Parameters
+    ----------
+    n, p : int
+        Sample size and number of predictors (must be positive).
+    mode : {"iid", "ar1"}
+        Design type.
+    rho : float | None
+        AR(1) parameter (-1 < rho < 1). Required iff mode == "ar1".
+    df : float
+        Degrees of freedom for noise; math.inf => Gaussian N(0,1).
+    k : int
+        Number of nonzero coefficients in beta (1 <= k <= p).
+    A : float
+        Amplitude for each nonzero coefficient (A >= 0).
+    sign_mode : {"random", "positive_only"}
+        If "random", each nonzero is +A or -A with prob 1/2.
+        If "positive_only", all nonzeros are +A.
+    support_indices : sequence[int] | None
+        If provided, must contain exactly k distinct indices in [0, p-1].
+        Otherwise a random support of size k is drawn.
+    normalize : bool
+        If True, normalize columns of X (recommended).
+    norm_target : {"sqrt_n", "unit_var"}
+        Column-wise normalization target.
+    seed : int | None
+        Master seed. Internally split to keep design/beta/noise independent.
+    snr : float | None
+        Not supported here (noise variance fixed at 1.0). If not None, raises.
+
+    Returns
     -------
-    y : (n, ) ndarray
+    y : (n,) ndarray
     X : (n, p) ndarray
-    beta : (p, ) ndarray
-    meta : dict  (sigma2, empirical_snr, df, rho, snr_target, seed, etc.)
-
+    beta : (p,) ndarray
+    meta : dict with keys:
+        - mode, rho, df
+        - k, A, sign_mode
+        - support_indices (list[int])
+        - n_pos, n_neg
+        - normalize, norm_target
+        - seed, seed_design, seed_beta, seed_noise
+        - empirical_snr = ||X beta||^2 / ||z||^2
+        - col_norm_min, col_norm_max  (after normalization)
     """
+    # ---- validation ----
     if not isinstance(n, int) or n <= 0:
         raise ValueError("n must be a positive integer.")
-
-    if not isinstance(p, int) or p <= 0:
+    if not isinstance(p, int) or p < 1:
         raise ValueError("p must be a positive integer.")
+    if not isinstance(k, int) or not (0 <= k <= p):
+        raise ValueError("k must be an integer in [0, p].")
+    if A < 0:
+        raise ValueError("A must be nonnegative.")
+    if sign_mode not in {"random", "positive_only"}:
+        raise ValueError("sign_mode must be one of {'random', 'positive_only'}.")
+    if snr is not None:
+        raise ValueError("snr-targeting not supported (noise variance fixed at 1.0).")
+    if mode not in {"iid", "ar1"}:
+        raise ValueError("mode must be one of {'iid', 'ar1'}.")
 
-    if sigma2 is None and snr is None:
-        raise ValueError("Provide either sigma2 or snr.")
+    # ---- master RNG and sub-seeds (independence across components) ----
+    rng_master = np.random.default_rng(seed)
+    seed_design = int(rng_master.integers(2**31 - 1))
+    seed_beta   = int(rng_master.integers(2**31 - 1))
+    seed_noise  = int(rng_master.integers(2**31 - 1))
 
-    if sigma2 is not None and sigma2 < 0:
-        raise ValueError("sigma2 must be nonnegative.")
+    # ---- 1) Design ----
+    X = generate_design(
+        n=n, p=p, mode=mode, rho=rho, seed=seed_design,
+        normalize=normalize, norm_target=norm_target
+    )
 
-    if snr is not None and snr <= 0:
-        raise ValueError("snr must be positive.")
+    # diagnostics for meta
+    col_norms = np.linalg.norm(X, axis=0)
+    col_norm_min = float(np.min(col_norms))
+    col_norm_max = float(np.max(col_norms))
 
-    rng = np.random.default_rng(seed)
-    # Split the master RNG stream so design and errors aren’t coupled
-    seed_X  = int(rng.integers(2**31 - 1))
-    seed_eps = int(rng.integers(2**31 - 1))
+    # ---- 2) Beta (exactly k nonzeros with fixed amplitude) ----
+    beta = np.zeros(p, dtype=np.float64)
+    rng_beta = np.random.default_rng(seed_beta)
 
-    # 1) Design
-    X = generate_data(n=n, p=p, rho=rho, seed=seed_X)
-
-    if center_X or standardize_X:
-        X = X.astype(float, copy=True)
-        if center_X:
-            X -= X.mean(axis=0, keepdims=True)
-        if standardize_X:
-            sd = X.std(axis=0, ddof=1, keepdims=True)
-            sd = np.where(sd <= EPS, 1.0, sd)
-            X /= sd
-
-    # 2) Beta (dense or k-sparse)
-    if beta_sparsity is None:
-        beta = rng.normal(loc=0.0, scale=beta_scale, size=p)
-    else:
-        if not (1 <= beta_sparsity <= p):
-            raise ValueError("beta_sparsity must be in [1, p].")
-        beta = np.zeros(p)
-        idx = rng.choice(p, size=beta_sparsity, replace=False)
-        beta[idx] = rng.normal(loc=0.0, scale=beta_scale, size=beta_sparsity)
-
-    # 3) Choose sigma2 (fixed or via SNR)
-    if sigma2 is None:
-        # SNR targeting: sigma2 = (beta^T X^T X beta) / snr
-        signal_energy = float(beta @ (X.T @ (X @ beta)))
-        if signal_energy <= EPS:
-            sigma2 = 1.0  # degenerate case: give reasonable noise
+    if k > 0:
+        if support_indices is not None:
+            supp = np.array(sorted(set(support_indices)), dtype=int)
+            if supp.size != k:
+                raise ValueError("support_indices must contain exactly k distinct indices.")
+            if supp.min() < 0 or supp.max() >= p:
+                raise ValueError("support_indices out of bounds.")
         else:
-            sigma2 = signal_energy / float(snr)
+            supp = rng_beta.choice(p, size=k, replace=False)
 
-    # 4) Errors
-    eps = generate_errors(n=n, df=df, sigma2=float(sigma2), seed=seed_eps)
+        if sign_mode == "random":
+            signs = rng_beta.choice(np.array([-1.0, 1.0]), size=k)
+        else:  # "positive_only"
+            signs = np.ones(k, dtype=np.float64)
 
-    # 5) Response
-    y = X @ beta + eps
+        beta[supp] = signs * float(A)
+        n_pos = int(np.sum(beta[supp] > 0))
+        n_neg = int(np.sum(beta[supp] < 0))
+    else:
+        supp = np.array([], dtype=int)
+        n_pos = 0
+        n_neg = 0
 
-    # 6) Meta info
-    noise_var = float(eps.var(ddof=1))
+    # ---- 3) Noise (variance fixed at 1.0 via generate_errors) ----
+    z = generate_errors(n=n, df=df, sigma2=1.0, seed=seed_noise)
+
+    # ---- 4) Response ----
+    y = X @ beta + z
+
+    # ---- 5) Meta ----
     signal_energy = float(beta @ (X.T @ (X @ beta)))
-    empirical_snr = math.inf if noise_var <= EPS else signal_energy / noise_var
+    noise_energy  = float(z @ z)
+    empirical_snr = math.inf if noise_energy <= EPS else signal_energy / noise_energy
 
     meta = dict(
-        sigma2=float(sigma2),
-        empirical_snr=float(empirical_snr),
+        mode=mode,
+        rho=None if mode == "iid" else float(rho),
         df=float(df),
-        rho=float(rho),
-        snr_target=(None if snr is None else float(snr)),
-        seed=int(seed) if seed is not None else None,
-        center_X=bool(center_X),
-        standardize_X=bool(standardize_X),
-        beta_sparsity=(None if beta_sparsity is None else int(beta_sparsity)),
+        k=int(k),
+        A=float(A),
+        sign_mode=sign_mode,
+        support_indices=supp.tolist(),
+        n_pos=n_pos,
+        n_neg=n_neg,
+        normalize=bool(normalize),
+        norm_target=norm_target,
+        seed=None if seed is None else int(seed),
+        seed_design=seed_design,
+        seed_beta=seed_beta,
+        seed_noise=seed_noise,
+        empirical_snr=float(empirical_snr),
+        col_norm_min=col_norm_min,
+        col_norm_max=col_norm_max,
     )
+
     return y, X, beta, meta
+
 
 
 
