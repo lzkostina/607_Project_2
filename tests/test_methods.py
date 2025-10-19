@@ -1,8 +1,10 @@
 import numpy as np
 import pytest
 
-from src.dgps import generate_design
-from src.methods import knockoffs_equicorr
+from src.dgps import generate_design, generate_full
+from src.methods import knockoffs_equicorr, lasso_path_stats
+
+##################################  knockoffs_equicorr tests  #######################
 
 def test_knockoffs_shapes_and_gram_identities():
     # Use n >= 2p
@@ -77,5 +79,38 @@ def test_knockoffs_s_and_M_properties():
     # M should be PSD (all eigenvalues >= -tiny_tol)
     evals = np.linalg.eigvalsh(0.5 * (M + M.T))
     assert evals.min() >= -1e-9
+
+
+##################################  lasso_path_stats tests  #######################
+
+def _make_data(n=300, p=120, k=10, A=6.0, seed=123, mode="iid"):
+    # n >= 2p needed by build_knockoffs
+    assert n >= 2 * p, "Test helper requires n >= 2p."
+    y, X, beta, meta = generate_full(
+        n, p,
+        mode=mode,
+        k=k, A=A,
+        seed=seed
+    )
+    Xk, _ = knockoffs_equicorr(X, seed=seed + 1)
+    return X, y, Xk, beta
+
+
+def test_lasso_path_stats_shapes_and_alphas():
+    n, p = 260, 120  # n >= 2p
+    X, y, X_knock, _ = _make_data(n=n, p=p, k=8, A=5.0, seed=7)
+
+    out = lasso_path_stats(X, y, X_knock, n_alphas=120, eps=1e-3, coef_tol=1e-9)
+
+    # shapes
+    assert out["W"].shape == (p,)
+    assert out["Z_orig"].shape == (p,)
+    assert out["Z_knock"].shape == (p,)
+    assert out["coefs"].shape[0] == 2 * p
+    assert out["coefs"].shape[1] == out["alphas"].shape[0]
+
+    # alphas are strictly decreasing
+    alphas = out["alphas"]
+    assert np.all(np.diff(alphas) < 0)
 
 
