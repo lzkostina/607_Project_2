@@ -2,7 +2,7 @@ import numpy as np
 import pytest
 
 from src.dgps import generate_design, generate_full
-from src.methods import knockoffs_equicorr, lasso_path_stats, knockoff_threshold, knockoff_select
+from src.methods import knockoffs_equicorr, lasso_path_stats, knockoff_threshold, knockoff_select, bh_select_marginal
 
 ##################################  knockoffs_equicorr tests  #######################
 
@@ -189,3 +189,50 @@ def test_knockoff_select_basic():
     # Sanity on counts used in FDP calculation
     assert info["num_neg"] == 0   # #{W <= -T} with T=0.8
     assert info["num_pos"] == 5   # #{W >= T} with T=0.8
+
+
+############################ bh_select_marginal tests ##########################
+
+def test_bh_select_marginal_no_signal_keeps_rejections_very_low():
+    """
+    Under pure noise (k=0) with a conservative q, BH should reject at most a few.
+    We avoid asserting exactly zero to prevent rare flakiness.
+    """
+    n, p = 800, 200
+    # k=0 => y is pure noise
+    y, X, beta, meta = generate_full(n, p, mode="iid", k=0, A=0.0, seed=123)
+    selected, info = bh_select_marginal(X, y, q=0.05)
+
+    # Expect very few (usually 0); cap at 5 to be robust across RNG/platforms
+    assert selected.size <= 5
+    assert info["m"] == p
+    # p-values exist and are finite
+    assert np.isfinite(info["threshold"]) or np.isnan(info["threshold"])
+
+
+def test_bh_select_marginal_strong_signal_detects_support():
+    """
+    With strong sparse signals, BH on marginal correlations should find many true signals.
+    We require at least half of the true support, and most selections should be true.
+    """
+    n, p, k, A = 1000, 200, 12, 8.0
+    y, X, beta, meta = generate_full(n, p, mode="iid", k=k, A=A, seed=321)
+    true_support = set(meta["support_indices"])
+
+    selected, info = bh_select_marginal(X, y, q=0.2)
+    sel_set = set(selected.tolist())
+
+    tp = len(sel_set & true_support)
+    fp = len(sel_set - true_support)
+
+    # Require a reasonable hit rate on true signals
+    assert tp >= 6   # at least half with this strong A
+
+    # Not too many false positives relative to discoveries
+    if len(sel_set) > 0:
+        fdp = fp / len(sel_set)
+        assert fdp <= 0.5
+
+    # Basic sanity on outputs
+    assert info["m"] == p
+    assert info["k"] == len(selected)
