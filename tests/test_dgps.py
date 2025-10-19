@@ -2,7 +2,7 @@ import numpy as np
 import pytest
 import math
 
-from src.dgps import auto_regressive_cov, generate_design, generate_errors
+from src.dgps import auto_regressive_cov, generate_design, generate_errors, generate_full
 
 ####################### auto_regressive_cov tests #######################
 
@@ -167,3 +167,90 @@ def test_generate_errors_student_t_rescaled_and_sigma2_validation():
     with pytest.raises(ValueError):
         _ = generate_errors(n=n, df=df, sigma2=0.9, seed=1)
 
+####################### generate_full tests ###########################
+
+def test_generate_full_shapes_and_determinism_iid():
+    n, p = 60, 25
+    y1, X1, b1, m1 = generate_full(n, p, mode="iid", k=5, A=3.5, seed=123)
+    y2, X2, b2, m2 = generate_full(n, p, mode="iid", k=5, A=3.5, seed=123)
+    y3, X3, b3, m3 = generate_full(n, p, mode="iid", k=5, A=3.5, seed=124)
+
+    assert X1.shape == (n, p)
+    assert y1.shape == (n,)
+    assert b1.shape == (p,)
+
+    # determinism
+    assert np.array_equal(X1, X2)
+    assert np.array_equal(y1, y2)
+    assert np.array_equal(b1, b2)
+    # likely different with different seed
+    assert not np.array_equal(X1, X3) or not np.array_equal(y1, y3)
+
+
+def test_generate_full_beta_sparsity_and_amplitudes_random_signs():
+    n, p, k, A = 80, 40, 7, 2.25
+    y, X, beta, meta = generate_full(n, p, mode="iid", k=k, A=A, seed=7)
+
+    nnz_idx = np.flatnonzero(beta)
+    assert nnz_idx.size == k
+    # all nonzeros are exactly ±A
+    assert np.all(np.isin(np.unique(np.abs(beta[nnz_idx])), [A]))
+    # sign counts in meta
+    assert meta["n_pos"] + meta["n_neg"] == k
+    # support indices in meta match beta's support (order-insensitive)
+    assert set(meta["support_indices"]) == set(nnz_idx.tolist())
+
+
+def test_generate_full_fixed_support_and_positive_only():
+    n, p, k, A = 50, 30, 5, 3.5
+    support = [0, 3, 5, 9, 12]
+    y, X, beta, meta = generate_full(
+        n, p, mode="iid", k=k, A=A,
+        sign_mode="positive_only",
+        support_indices=support,
+        seed=42
+    )
+    nnz_idx = np.flatnonzero(beta)
+    assert set(nnz_idx.tolist()) == set(support)
+    assert np.all(beta[nnz_idx] == A)  # all positive
+    assert meta["n_neg"] == 0 and meta["n_pos"] == k
+
+
+def test_generate_full_normalization_sqrt_n_default():
+    n, p = 64, 20
+    y, X, beta, meta = generate_full(n, p, mode="iid", k=0, A=0.0, seed=5)
+    norms = np.linalg.norm(X, axis=0)
+    assert np.allclose(norms, np.sqrt(n), rtol=1e-10, atol=1e-10)
+    # meta has min/max norms recorded
+    assert abs(meta["col_norm_min"] - np.sqrt(n)) < 1e-8
+    assert abs(meta["col_norm_max"] - np.sqrt(n)) < 1e-8
+
+
+def test_generate_full_ar1_empirical_lag1_corr_sign():
+    n, p, rho = 300, 35, 0.8
+    _, X_pos, _, _ = generate_full(n, p, mode="ar1", rho=rho, k=0, A=0.0, seed=11)
+    C_pos = np.corrcoef(X_pos, rowvar=False)
+    lag1_pos = np.mean([C_pos[j, j+1] for j in range(p-1)])
+    assert lag1_pos > 0.4  # noticeably positive
+
+    rho = -0.8
+    _, X_neg, _, _ = generate_full(n, p, mode="ar1", rho=rho, k=0, A=0.0, seed=11)
+    C_neg = np.corrcoef(X_neg, rowvar=False)
+    lag1_neg = np.mean([C_neg[j, j+1] for j in range(p-1)])
+    assert lag1_neg < -0.4  # noticeably negative
+
+
+def test_generate_full_snr_not_supported_raises():
+    with pytest.raises(ValueError):
+        _ = generate_full(40, 15, mode="iid", k=3, A=1.0, snr=5.0, seed=1)
+
+
+def test_generate_full_k_zero_zero_beta_and_unit_noise_variance():
+    n, p = 500, 25
+    y, X, beta, meta = generate_full(n, p, mode="iid", k=0, A=0.0, seed=99)
+    # beta is all zeros
+    assert np.all(beta == 0.0)
+    # y should essentially be pure noise with unit variance
+    # (mean ~ 0, sample variance ~ 1 with tolerance)
+    assert abs(y.mean()) < 0.1
+    assert abs(y.var(ddof=1) - 1.0) < 0.1
