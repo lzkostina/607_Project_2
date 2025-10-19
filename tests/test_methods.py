@@ -114,3 +114,18 @@ def test_lasso_path_stats_shapes_and_alphas():
     assert np.all(np.diff(alphas) < 0)
 
 
+def test_lasso_path_stats_determinism():
+    n, p = 240, 110
+    X, y, Xk, _ = _make_data(n=n, p=p, k=6, A=5.0, seed=11)
+
+    meta_1 = lasso_path_stats(X, y, Xk, n_alphas=100, eps=1e-3, coef_tol=1e-9)
+    meta_2 = lasso_path_stats(X, y, Xk, n_alphas=100, eps=1e-3, coef_tol=1e-9)
+
+    # identical outputs for identical inputs
+    assert np.array_equal(meta_1["W"], meta_2["W"])
+    assert np.array_equal(meta_1["Z_orig"], meta_2["Z_orig"])
+    assert np.array_equal(meta_1["Z_knock"], meta_2["Z_knock"])
+    assert np.array_equal(meta_1["alphas"], meta_2["alphas"])
+    assert np.array_equal(meta_1["coefs"], meta_2["coefs"])
+
+
