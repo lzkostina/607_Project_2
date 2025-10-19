@@ -99,3 +99,39 @@ def validate_config(cfg: Dict[str, Any]) -> None:
             RuntimeWarning,
         )
 
+# ------------------------------ Core helpers ----------------------------------
+
+def _trial_seeds(base_seed: int, trial_id: int) -> Tuple[int, int]:
+    """
+    Deterministic mapping so (base_seed, trial_id) -> (seedA, seedB).
+    """
+    rng = np.random.default_rng(hash((base_seed, trial_id)) & 0x7FFFFFFF)
+    return int(rng.integers(2**31 - 1)), int(rng.integers(2**31 - 1))
+
+
+# ----------------------------------- CLI --------------------------------------
+
+def parse_args(argv: List[str]) -> argparse.Namespace:
+    p = argparse.ArgumentParser(description="Simulation study runner (step 1: config & seeds, no classes)")
+    p.add_argument("--check-config", action="store_true", help="Load and validate config(s) only.")
+    p.add_argument("--config", "-c", action="append", default=[], help="Path to a JSON config. Repeatable.")
+    return p.parse_args(argv)
+
+
+def main(argv: List[str] | None = None) -> None:
+    args = parse_args(sys.argv[1:] if argv is None else argv)
+
+    if args.check_config:
+        if not args.config:
+            raise SystemExit("Use -c path/to/config.json (repeatable) with --check-config.")
+        for cpath in args.config:
+            cfg = load_config(Path(cpath))
+            validate_config(cfg)
+            print(f"[ok] {cpath}: name={cfg['name']}, n={cfg['n']}, p={cfg['p']}, mode={cfg['mode']}, rho={cfg['rho']}")
+        return
+
+    print("Nothing to do. Try --check-config -c configs/example.json")
+
+
+if __name__ == "__main__":
+    main()
