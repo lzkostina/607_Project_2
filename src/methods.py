@@ -1,5 +1,6 @@
 import numpy as np
 from sklearn.linear_model import lasso_path
+from scipy import stats
 
 def knockoffs_equicorr(X: np.ndarray, *, use_true_Sigma: np.ndarray | None = None,seed: int | None = None
         )->tuple[np.ndarray, dict]:
@@ -346,3 +347,76 @@ def knockoff_select(W: np.ndarray, q: float, offset: int = 1) -> tuple[np.ndarra
         "num_neg": int(np.count_nonzero(W <= -T)),
         "num_pos": int(np.count_nonzero(W >= T)),
     }
+
+
+def bh_select_marginal(X: np.ndarray, y: np.ndarray, q: float = 0.2) -> tuple[np.ndarray, dict]:
+    """
+    Benjamini–Hochberg baseline using marginal correlations.
+
+    Parameters
+    ----------
+    X : (n, p) ndarray
+        Design matrix (columns normalized or not; normalization handled internally).
+    y : (n,) ndarray
+        Response vector.
+    q : float, default=0.2
+        Target FDR level.
+
+    Returns
+    -------
+    selected : (k,) ndarray of ints
+        Indices of selected features after BH correction.
+    info : dict
+        {'pvals': p-values array, 'q': q, 'threshold': p-value cutoff, 'm': p, 'k': number selected}
+    """
+    X = np.asarray(X, float)
+    y = np.asarray(y, float).ravel()
+    n, p = X.shape
+    if y.shape[0] != n:
+        raise ValueError("Length of y must match number of rows in X.")
+    if not (0 < q < 1):
+        raise ValueError("q must be in (0, 1).")
+
+    # Center and normalize y
+    y_centered = y - y.mean()
+    y_std = np.linalg.norm(y_centered)
+    if y_std < 1e-12:
+        raise ValueError("y has zero variance.")
+    y_norm = y_centered / y_std
+
+    # Marginal correlations
+    X_centered = X - X.mean(axis=0, keepdims=True)
+    X_std = np.linalg.norm(X_centered, axis=0)
+    X_std = np.where(X_std < 1e-12, 1.0, X_std)
+    X_norm = X_centered / X_std
+    r = X_norm.T @ y_norm  # correlation-like scores
+
+    # Convert to two-sided p-values (using t-distribution under H0)
+    # df = n - 2, t = r * sqrt(df / (1 - r^2))
+    df = max(n - 2, 1)
+    t_stat = r * np.sqrt(df / np.maximum(1e-12, 1 - r**2))
+    pvals = 2 * (1 - stats.t.cdf(np.abs(t_stat), df))
+
+    # BH procedure
+    m = p
+    sorted_idx = np.argsort(pvals)
+    sorted_p = pvals[sorted_idx]
+    thresh = (np.arange(1, m + 1) / m) * q
+    below = sorted_p <= thresh
+    if not np.any(below):
+        return np.array([], dtype=int), {'pvals': pvals, 'q': q, 'threshold': np.nan, 'm': m, 'k': 0}
+
+    k_max = np.max(np.where(below)[0]) + 1
+    p_cutoff = sorted_p[k_max - 1]
+    selected = np.flatnonzero(pvals <= p_cutoff)
+
+    info = dict(
+        pvals=pvals,
+        q=q,
+        threshold=p_cutoff,
+        m=m,
+        k=len(selected),
+    )
+    return selected.astype(int), info
+
+
