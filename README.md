@@ -19,6 +19,9 @@ All outputs are stored in the `results/` directory.
 │ ├── methods.py # statistical methods being evaluated
 │ ├── metrics.py # performance measure calculations
 │ └── simulation.py # main simulation orchestration
+├── configs/  
+│ ├── baseline.json
+│ └── ar1_05.json
 ├── run_experiment.py # main script (runs all simulations)
 ├── results/
 │ ├── raw/ # raw simulation output (*.csv, *.pkl)
