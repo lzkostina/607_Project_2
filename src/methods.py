@@ -244,3 +244,105 @@ def lasso_path_stats(
         coef_tol=float(coef_tol),
     )
     return out
+
+
+def knockoff_threshold(W: np.ndarray, q: float, offset: int = 1) -> float:
+    """
+    Compute the Knockoff / Knockoff+ data-dependent threshold.
+
+    Definition (Barber & Candès, 2015):
+        T = min{ t > 0 :
+                 (offset + # { j : W_j <= -t }) / max(1, # { j : W_j >= t }) <= q }
+    where:
+      - offset = 1  -> Knockoff+ (exact FDR control, recommended)
+      - offset = 0  -> original Knockoff (slightly more liberal)
+
+    Parameters
+    ----------
+    W : array-like, shape (p,)
+        Antisymmetric statistics (positive favors original, negative favors knockoff).
+    q : float
+        Target FDR level in (0, 1).
+    offset : int, default 1
+        Use 1 for Knockoff+. Use 0 for the original Knockoff.
+
+    Returns
+    -------
+    T : float or np.nan
+        The chosen threshold. np.nan if no t satisfies the inequality (i.e., select none).
+
+    Notes
+    -----
+    - We search over the **data-driven grid** of positive unique |W_j| values.
+    - If all W are zero or NaN/inf, returns np.nan.
+    """
+    W = np.asarray(W, dtype=np.float64)
+    if W.ndim != 1:
+        raise ValueError("W must be a 1D array.")
+    if not (0.0 < q < 1.0):
+        raise ValueError("q must be in (0, 1).")
+    if offset not in (0, 1):
+        raise ValueError("offset must be 0 (Knockoff) or 1 (Knockoff+).")
+
+    # Clean and build candidate grid t > 0 from data
+    w_clean = W[np.isfinite(W)]
+    candidates = np.sort(np.unique(np.abs(w_clean[w_clean != 0.0])))
+    if candidates.size == 0:
+        return float("nan")
+
+    # Scan in increasing t to find the first that satisfies the inequality
+    # (earliest t gives the *smallest* set of selections that achieves FDP_hat <= q)
+    for t in candidates:
+        num = offset + np.count_nonzero(W <= -t)
+        den = max(1, int(np.count_nonzero(W >= t)))
+        fdp_hat = num / den
+        if fdp_hat <= q:
+            return float(t)
+
+    # No feasible t -> select none
+    return float("nan")
+
+
+def knockoff_select(W: np.ndarray, q: float, offset: int = 1) -> tuple[np.ndarray, dict]:
+    """
+    Select features using the Knockoff / Knockoff+ thresholding rule.
+
+    Parameters
+    ----------
+    W : array-like, shape (p,)
+        Antisymmetric Knockoff statistics.
+    q : float
+        Target FDR level in (0, 1).
+    offset : int, default 1
+        1 for Knockoff+ (recommended), 0 for original Knockoff.
+
+    Returns
+    -------
+    selected : np.ndarray, shape (k,)
+        Indices j such that W_j >= T (empty if no feasible threshold).
+    info : dict
+        {'T': threshold (float or np.nan), 'fdp_hat': float or np.nan,
+         'num_neg': int, 'num_pos': int}
+    """
+    T = knockoff_threshold(W, q=q, offset=offset)
+    if not np.isfinite(T):
+        return np.array([], dtype=int), {
+            "T": float("nan"),
+            "fdp_hat": float("nan"),
+            "num_neg": int(np.count_nonzero(W < 0)),
+            "num_pos": int(np.count_nonzero(W > 0)),
+        }
+
+    sel_mask = (W >= T)
+    selected = np.flatnonzero(sel_mask)
+
+    num = offset + int(np.count_nonzero(W <= -T))
+    den = max(1, int(sel_mask.sum()))
+    fdp_hat = num / den
+
+    return selected.astype(int), {
+        "T": float(T),
+        "fdp_hat": float(fdp_hat),
+        "num_neg": int(np.count_nonzero(W <= -T)),
+        "num_pos": int(np.count_nonzero(W >= T)),
+    }
