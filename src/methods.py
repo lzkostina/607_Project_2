@@ -1,4 +1,5 @@
 import numpy as np
+from sklearn.linear_model import lasso_path
 
 def knockoffs_equicorr(X: np.ndarray, *, use_true_Sigma: np.ndarray | None = None,seed: int | None = None
         )->tuple[np.ndarray, dict]:
@@ -117,3 +118,129 @@ def knockoffs_equicorr(X: np.ndarray, *, use_true_Sigma: np.ndarray | None = Non
     )
 
     return X_knock, meta
+
+
+def lasso_path_stats(
+    X: np.ndarray,
+    y: np.ndarray,
+    Xk: np.ndarray,
+    *,
+    center_y: bool = True,
+    n_alphas: int = 100,
+    eps: float = 1e-3,
+    coef_tol: float = 1e-9,
+    max_iter: int = 10_000,
+) -> dict:
+    """
+    Compute Knockoff W-statistics via a single Lasso path on the augmented design [X | Xk].
+
+    For each original variable j and its knockoff j~, define the entry alpha:
+        Z_j      = the largest alpha where coef_j first becomes nonzero (as alphas decrease)
+        Z_j_tilde = same for the knockoff column
+    Then the antisymmetric statistic is:
+        W_j = max(Z_j, Z_j_tilde) * sign(Z_j - Z_j_tilde)
+
+    Notes
+    -----
+    - We use sklearn.linear_model.lasso_path (alphas returned in decreasing order).
+    - Columns of X are assumed to be on a common scale already (e.g., ||X[:,j]||_2 = sqrt(n)).
+    - If a feature never becomes nonzero along the path, its Z is set to 0.
+
+    Parameters
+    ----------
+    X : array-like, shape (n, p)
+        Original design.
+    y : array-like, shape (n,)
+        Response. Optionally centered internally.
+    Xk : array-like, shape (n, p)
+        Knockoff design.
+    center_y : bool, default True
+        If True, center y to mean zero before fitting (keeps fit_intercept=False stable).
+    fit_intercept : bool, default False
+        Passed to lasso_path. (When center_y=True, leaving this False is typical.)
+    n_alphas : int, default 100
+        Number of alphas on the path (sklearn will auto-generate when alphas=None).
+    eps : float, default 1e-3
+        Length of the path (ratio alpha_min / alpha_max).
+    coef_tol : float, default 1e-9
+        Threshold for treating a coefficient as nonzero.
+    max_iter : int, default 10_000
+        Max iterations per coordinate descent subproblem.
+
+    Returns
+    -------
+    out : dict with keys
+        - 'W'        : (p,) array, antisymmetric Knockoff statistics
+        - 'Z_orig'   : (p,) entry alphas for original columns
+        - 'Z_knock'  : (p,) entry alphas for knockoff columns
+        - 'alphas'   : (n_alphas,) decreasing sequence used by sklearn
+        - 'coefs'    : (2p, n_alphas) coefficient path for [X | Xk]
+        - 'coef_tol' : float, tolerance used to decide 'nonzero'
+    """
+    X = np.asarray(X, dtype=np.float64, order="C")
+    Xk = np.asarray(Xk, dtype=np.float64, order="C")
+    y = np.asarray(y, dtype=np.float64).ravel()
+
+    n, p = X.shape
+    if Xk.shape != (n, p):
+        raise ValueError(f"Xk must have shape {(n, p)}, got {Xk.shape}.")
+    if y.shape[0] != n:
+        raise ValueError(f"y must have length n={n}, got {y.shape[0]}.")
+
+    # Augment design
+    X_aug = np.concatenate([X, Xk], axis=1)
+
+    # Optionally center y (keep fit_intercept=False for a pure path on X_aug)
+    y_fit = y - y.mean() if center_y else y
+
+    # Run a single joint Lasso path
+    # Returns: alphas (decreasing), coefs (n_features x n_alphas)
+    # We pass max_iter via **kwargs to ensure convergence on tougher problems.
+    alphas, coefs, _ = lasso_path(
+        X_aug,
+        y_fit,
+        eps=eps,
+        n_alphas=n_alphas,
+        alphas=None,
+        max_iter=max_iter,
+        verbose=False,
+    )
+
+    # Ensure shapes are consistent with sklearn’s contract
+    # coefs has shape (2p, n_alphas); alphas shape (n_alphas,)
+    if coefs.shape != (2 * p, alphas.shape[0]):
+        raise RuntimeError("Unexpected shapes from lasso_path: "
+                           f"coefs {coefs.shape}, alphas {alphas.shape}")
+
+    # Find entry alpha for each feature (first nonzero as alphas decrease)
+    # Since alphas are decreasing, the FIRST index where |coef| > tol is the entry.
+    Z_all = np.zeros(2 * p, dtype=np.float64)
+    abs_coefs = np.abs(coefs)
+    nz_mask = abs_coefs > coef_tol
+
+    for j in range(2 * p):
+        mask = nz_mask[j]
+        if np.any(mask):
+            first_idx = int(np.argmax(mask))  # first True along decreasing alphas
+            Z_all[j] = float(alphas[first_idx])
+        else:
+            Z_all[j] = 0.0
+
+    Z_orig = Z_all[:p]
+    Z_knock = Z_all[p:]
+
+    # Antisymmetric W statistics
+    # If both Z's are zero, W_j = 0.
+    max_pair = np.maximum(Z_orig, Z_knock)
+    diff = Z_orig - Z_knock
+    W = max_pair * np.sign(diff)
+
+    out = dict(
+        W=W,
+        Z_orig=Z_orig,
+        Z_knock=Z_knock,
+        alphas=alphas,
+        coefs=coefs,
+        coef_tol=float(coef_tol),
+    )
+    return out
