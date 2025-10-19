@@ -2,7 +2,7 @@ import numpy as np
 import pytest
 
 from src.dgps import generate_design, generate_full
-from src.methods import knockoffs_equicorr, lasso_path_stats
+from src.methods import knockoffs_equicorr, lasso_path_stats, knockoff_threshold, knockoff_select
 
 ##################################  knockoffs_equicorr tests  #######################
 
@@ -129,3 +129,63 @@ def test_lasso_path_stats_determinism():
     assert np.array_equal(meta_1["coefs"], meta_2["coefs"])
 
 
+def test_lasso_path_stats_zero_response_all_zero():
+    n, p = 220, 100
+    # Build X, Xk; then set y to zeros to force all coefs to zero along path
+    _, X, _, _ = generate_full(n, p, mode="iid", k=0, A=0.0, seed=5)  # use helper to get normalized X
+    Xk, _ = knockoffs_equicorr(X, seed=13)
+    y = np.zeros(n, dtype=float)
+
+    out = lasso_path_stats(X, y, Xk, n_alphas=80, eps=1e-3, coef_tol=1e-9)
+
+    assert np.allclose(out["Z_orig"], 0.0)
+    assert np.allclose(out["Z_knock"], 0.0)
+    assert np.allclose(out["W"], 0.0)
+
+
+def test_lasso_path_stats_signal_sanity_more_positive_W():
+    n, p = 280, 120
+    # strong sparse signal -> originals should tend to win (W > 0)
+    X, y, Xk, beta = _make_data(n=n, p=p, k=12, A=7.0, seed=33)
+
+    out = lasso_path_stats(X, y, Xk, n_alphas=120, eps=1e-3, coef_tol=1e-9)
+
+    n_pos = int((out["W"] > 0).sum())
+    n_neg = int((out["W"] < 0).sum())
+
+    # Heuristic check: there should be more positives than negatives
+    assert n_pos > n_neg
+
+############################# knockoff_threshold tests #######################
+
+def test_knockoff_threshold_basic():
+    # Construct W with many positive, few small negatives.
+    # With q=0.2 and offset=1 (Knockoff+), the smallest feasible t is 0.8:
+    #   candidates t: 0.1, 0.2, 0.8, 1.0, 1.5, 2.0, 3.0
+    #   at t=0.8: num = 1 + #{W <= -0.8} = 1 + 0 = 1
+    #             den = max(1, #{W >= 0.8}) = 5
+    #             fdp_hat = 1/5 = 0.2 <= q
+    W = np.array([3.0, 2.0, 1.5, 1.0, 0.8, -0.2, -0.1, 0.0], dtype=float)
+    q = 0.2
+    T = knockoff_threshold(W, q=q, offset=1)
+    assert np.isfinite(T)
+    assert abs(T - 0.8) < 1e-12  # exact in this synthetic setup
+
+
+############################# knockoff_select tests #######################
+def test_knockoff_select_basic():
+    # Same W as above: expect selection of indices with W >= 0.8
+    W = np.array([3.0, 2.0, 1.5, 1.0, 0.8, -0.2, -0.1, 0.0], dtype=float)
+    q = 0.2
+    selected, info = knockoff_select(W, q=q, offset=1)
+
+    # Expected indices: 0..4
+    assert np.array_equal(selected, np.array([0, 1, 2, 3, 4], dtype=int))
+
+    # Threshold and FDP estimate match the hand calculation
+    assert np.isfinite(info["T"]) and abs(info["T"] - 0.8) < 1e-12
+    assert abs(info["fdp_hat"] - 0.2) < 1e-12
+
+    # Sanity on counts used in FDP calculation
+    assert info["num_neg"] == 0   # #{W <= -T} with T=0.8
+    assert info["num_pos"] == 5   # #{W >= T} with T=0.8
