@@ -53,3 +53,29 @@ def test_knockoffs_determinism_and_variation_with_seed():
     assert not np.array_equal(X_knock_1, X_knock_3)
 
 
+def test_knockoffs_invalid_inputs():
+    # Here n < 2p should raise
+    n, p = 150, 100  # n - p = 50 < p
+    X = generate_design(n=n, p=p, mode="iid", seed=3, normalize=True, norm_target="sqrt_n")
+
+    with pytest.raises(ValueError):
+        _ = knockoffs_equicorr(X, seed=0)
+
+
+def test_knockoffs_s_and_M_properties():
+    n, p = 260, 120
+    X = generate_design(n=n, p=p, mode="iid", seed=7, normalize=True, norm_target="sqrt_n")
+
+    X_knock, meta = knockoffs_equicorr(X, seed=9)
+
+    s = meta["s"]
+    M = meta["M"]
+
+    # s should be in [0, 1] (up to tiny numerical tolerance)
+    assert s >= -1e-10 and s <= 1.0 + 1e-10
+
+    # M should be PSD (all eigenvalues >= -tiny_tol)
+    evals = np.linalg.eigvalsh(0.5 * (M + M.T))
+    assert evals.min() >= -1e-9
+
+
