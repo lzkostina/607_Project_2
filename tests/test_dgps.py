@@ -2,7 +2,7 @@ import numpy as np
 import pytest
 import math
 
-from src.dgps import auto_regressive_cov, generate_design
+from src.dgps import auto_regressive_cov, generate_design, generate_errors
 
 ####################### auto_regressive_cov tests #######################
 
@@ -134,4 +134,36 @@ def test_generate_design_iid_ignores_rho():
     # Ensure iid runs even if rho is set (you may emit a warning internally)
     X = generate_design(n=30, p=8, mode="iid", rho=0.9, seed=5)
     assert X.shape == (30, 8)
+
+
+############################# generate_errors tests ###########################
+
+def test_generate_errors_gaussian_determinism_and_unit_var():
+    n = 2000
+    z1 = generate_errors(n=n, df=math.inf, sigma2=1.0, seed=123)
+    z2 = generate_errors(n=n, df=math.inf, sigma2=1.0, seed=123)
+    z3 = generate_errors(n=n, df=math.inf, sigma2=1.0, seed=456)
+
+    # shape and determinism
+    assert z1.shape == (n,)
+    assert np.array_equal(z1, z2)
+    assert not np.array_equal(z1, z3)
+
+    # approximate zero mean and unit variance
+    assert abs(z1.mean()) < 0.05          # CLT tolerance for n=2000
+    assert abs(z1.var(ddof=1) - 1.0) < 0.05
+
+
+def test_generate_errors_student_t_rescaled_and_sigma2_validation():
+    n = 3000
+    df = 5.0
+    z = generate_errors(n=n, df=df, sigma2=1.0, seed=999)
+
+    # approximate zero mean and unit variance after rescaling
+    assert abs(z.mean()) < 0.05
+    assert abs(z.var(ddof=1) - 1.0) < 0.05
+
+    # sigma2 must be exactly 1.0 (within tiny tolerance) -> any other value should raise
+    with pytest.raises(ValueError):
+        _ = generate_errors(n=n, df=df, sigma2=0.9, seed=1)
 
