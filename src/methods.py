@@ -40,8 +40,22 @@ def knockoffs_equicorr(X: np.ndarray, *, use_true_Sigma: np.ndarray | None = Non
         if Sigma.shape != (p, p):
             raise ValueError("use_true_Sigma must have shape (p, p).")
 
+    # numerical stability
     Sigma = 0.5 * (Sigma + Sigma.T)
 
+    evals, evecs = np.linalg.eigh(Sigma)
+    lambda_min = float(np.min(evals))
+    if lambda_min < -1e-8:
+        raise ValueError(f"Sigma appears indefinite: min eigenvalue = {lambda_min:.3e}")
+
+    evals_clamped = np.maximum(evals, 0.0)
+    Sigma_psd = (evecs * evals_clamped) @ evecs.T  # rebuild PSD Sigma
+
+    lambda_min_clamped = float(np.min(evals_clamped))
+    s = min(1.0, 2.0 * lambda_min_clamped)
+    s = max(0.0, float(s) - 1e-12)
+
+    S = s * np.eye(p, dtype=np.float64) # S = s I, with s <= min(1, 2*lambda_min)
 
     X_knock = X
     meta = dict()
