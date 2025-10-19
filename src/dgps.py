@@ -1,6 +1,8 @@
 import numpy as np
 import warnings
 import math
+from typing import Optional, Sequence
+
 
 EPS = 1e-12
 
@@ -188,13 +190,6 @@ def generate_errors(
     scale = 1.0 / math.sqrt(cur_var)
     eps = t * scale
     return eps
-
-
-import numpy as np
-import math
-from typing import Optional, Sequence
-
-# assumes EPS, generate_design, and generate_errors are defined in the same module
 
 def generate_full(
     n: int,
