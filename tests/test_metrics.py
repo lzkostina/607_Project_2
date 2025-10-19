@@ -1,8 +1,9 @@
 import numpy as np
 import pytest
 
-from src.metrics import fdp_power
+from src.metrics import fdp_power, fdr_power_all
 
+############################## fdr_power tests ############################
 def test_fdp_power_single_basic_and_edges():
     # True signals at {1,3,5}
     S = [1, 3, 5]
@@ -33,11 +34,38 @@ def test_fdp_power_single_basic_and_edges():
     sel = [0, 2]
     out = fdp_power(S0, sel)
     assert np.isnan(out["Power"])
-    # FDP still well-defined
-    assert out["FDP"] == 0.0  # all selections are "false", but R>0 so V/R = 1.0
-    # Wait: with S* empty, V=R, so FDP=R/max(R,1)=1.0 if R>0, else 0.0
-    # Let's check explicitly:
-    R = len(sel)
-    expected_fdp = 0.0 if R == 0 else 1.0
-    assert abs(out["FDP"] - expected_fdp) < 1e-12
+    assert out["R"] == 2 and out["TP"] == 0 and out["V"] == 2
+    assert out["FDP"] == 1.0  # since V=R=2
 
+
+############################## fdr_power_all tests ############################
+
+def test_fdr_power_all_basic():
+    # Two trials with signals, one without
+    true_list = [
+        [1, 3, 5],          # trial 1  (|S*|=3)
+        [2, 4],             # trial 2  (|S*|=2)
+        [],                 # trial 3  (no signals -> Power NaN)
+    ]
+    sel_list = [
+        [1, 3],             # TP=2,R=2 -> FDP=0, Power=2/3
+        [2, 7, 9],          # TP=1,R=3 -> FDP=2/3, Power=1/2
+        [0, 1],             # no signals: FDP=1.0, Power=NaN
+    ]
+
+    out = fdr_power_all(true_list, sel_list)
+    # FDR = mean(FDP) over all three trials
+    fdp_vals = [0.0, 2/3, 1.0]
+    expected_FDR = sum(fdp_vals) / 3
+    assert abs(out["FDR"] - expected_FDR) < 1e-12
+
+    # Power = mean over trials with signals only (nanmean)
+    pow_vals = [2/3, 1/2]  # (exclude NaN from the third trial)
+    expected_Power = sum(pow_vals) / 2
+    assert abs(out["Power"] - expected_Power) < 1e-12
+
+    # SEs defined (nan if insufficient trials)
+    assert out["num_trials"] == 3
+    assert out["num_trials_pos"] == 2
+    assert np.isfinite(out["FDR_se"])
+    assert np.isfinite(out["Power_se"])
