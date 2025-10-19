@@ -4,6 +4,7 @@ import pytest
 from src.metrics import fdp_power, fdr_power_all
 
 ############################## fdr_power tests ############################
+
 def test_fdp_power_single_basic_and_edges():
     # True signals at {1,3,5}
     S = [1, 3, 5]
