@@ -82,10 +82,9 @@ def generate_design(
     # inputs check
     if not isinstance(n, int) or n <= 0:
         raise ValueError("n must be a positive integer")
-    if not isinstance(p, int) or p <= 0:
+    if not isinstance(p, int) or p < 1:
         raise ValueError("p must be a positive integer")
-    if not (-1 < rho < 1):
-        raise ValueError("rho must be in (-1, 1)")
+
     if mode not in {"iid", "ar1"}:
         raise ValueError("mode must be one of {'iid', 'ar1'}.")
     if norm_target not in {"sqrt_n", "unit_var"}:
