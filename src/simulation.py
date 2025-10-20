@@ -8,6 +8,7 @@ import json
 import math
 import sys
 import warnings
+import matplotlib.pyplot as plt
 from pathlib import Path
 from typing import Any, Dict, List, Tuple
 
@@ -114,9 +115,11 @@ def _trial_seeds(base_seed: int, trial_id: int) -> Tuple[int, int]:
 # ----------------------------------- CLI --------------------------------------
 
 def parse_args(argv: List[str]) -> argparse.Namespace:
-    p = argparse.ArgumentParser(description="Simulation study runner (step 2: trial loop + raw CSV)")
+    p = argparse.ArgumentParser(description="Simulation study runner (step 3: analyze + figures)")
     p.add_argument("--check-config", action="store_true", help="Load and validate config(s) only.")
     p.add_argument("--simulate", action="store_true", help="Run simulations for the given config(s) and write results/raw/*.csv")
+    p.add_argument("--analyze", action="store_true", help="Aggregate results/raw/*_trials.csv into results/summary.csv")
+    p.add_argument("--figures", action="store_true", help="Create summary figures from results/summary.csv")
     p.add_argument("--config", "-c", action="append", default=[], help="Path to a JSON config. Repeatable.")
     return p.parse_args(argv)
 
@@ -248,6 +251,108 @@ def save_raw(df: pd.DataFrame, cfg: Dict[str, Any]) -> Path:
     write_json(cfg, RAW_DIR / f"{cfg['name']}_config.json")
     return path
 
+def _mean_se(x: np.ndarray) -> tuple[float, float]:
+    x = np.asarray(x, float)
+    mask = ~np.isnan(x)
+    m = float(np.nanmean(x)) if mask.any() else float("nan")
+    se = float(np.nanstd(x[mask], ddof=1) / np.sqrt(mask.sum())) if mask.sum() > 1 else float("nan")
+    return m, se
+
+
+def aggregate_all_raw() -> pd.DataFrame:
+    """
+    Read all results/raw/*_trials.csv and aggregate per (name, method) into means+SEs.
+    Writes results/summary.csv and returns the DataFrame.
+    """
+    files = sorted(RAW_DIR.glob("*_trials.csv"))
+    if not files:
+        raise FileNotFoundError(f"No raw trial CSVs found in {RAW_DIR}.")
+
+    summaries: list[dict] = []
+    for f in files:
+        df = pd.read_csv(f)
+        # Expect columns from Step 2 runner
+        name = df["name"].iloc[0]
+        n = int(df["n"].iloc[0]); p = int(df["p"].iloc[0])
+        mode = df["mode"].iloc[0]; rho = df["rho"].iloc[0]
+        k_true = int(df["k_true"].iloc[0]); A = float(df["A"].iloc[0])
+
+        # Knockoff+
+        fdr_kn, se_fdr_kn = _mean_se(df["FDP_kn"].to_numpy())
+        pow_kn, se_pow_kn = _mean_se(df["Power_kn"].to_numpy())
+        summaries.append(dict(
+            name=name, method="Knockoff+",
+            FDR=fdr_kn, FDR_se=se_fdr_kn, Power=pow_kn, Power_se=se_pow_kn,
+            n_trials=len(df), n=n, p=p, mode=mode, rho=rho, k_true=k_true, A=A,
+        ))
+
+        # BH (marginal)
+        fdr_bh, se_fdr_bh = _mean_se(df["FDP_bh"].to_numpy())
+        pow_bh, se_pow_bh = _mean_se(df["Power_bh"].to_numpy())
+        summaries.append(dict(
+            name=name, method="BH (marginal)",
+            FDR=fdr_bh, FDR_se=se_fdr_bh, Power=pow_bh, Power_se=se_pow_bh,
+            n_trials=len(df), n=n, p=p, mode=mode, rho=rho, k_true=k_true, A=A,
+        ))
+
+    out = pd.DataFrame(summaries).sort_values(["name", "method"], ignore_index=True)
+    out_path = RESULTS_DIR / "summary.csv"
+    out_path.parent.mkdir(parents=True, exist_ok=True)
+    out.to_csv(out_path, index=False)
+    return out
+
+
+# ---------------------------------- Figures -----------------------------------
+
+def plot_summary_bars(summary_df: pd.DataFrame, name: str) -> Path:
+    """
+    Make a side-by-side bar chart (FDR and Power with 95% CIs) for a single config name.
+    Saves to results/figures/{name}_fdr_power.png and returns the path.
+    """
+    sub = summary_df[summary_df["name"] == name].copy()
+    if sub.empty:
+        raise ValueError(f"No summary rows for name={name!r}.")
+
+    fig, axes = plt.subplots(1, 2, figsize=(8.0, 3.8), constrained_layout=True)
+
+    for ax, metric, se_col, title in [
+        (axes[0], "FDR",   "FDR_se",   "Empirical FDR"),
+        (axes[1], "Power", "Power_se", "Empirical Power"),
+    ]:
+        means = sub[metric].to_numpy()
+        ses = sub[se_col].to_numpy()
+        labels = sub["method"].tolist()
+        x = np.arange(len(labels))
+        ax.bar(x, means, yerr=1.96 * ses, capsize=4)
+        ax.set_xticks(x, labels, rotation=15)
+        ymax = np.nanmax(means + 1.96 * ses) if len(means) else 1.0
+        ax.set_ylim(0, max(0.001, float(ymax) * 1.15))
+        ax.grid(axis="y", alpha=0.3)
+        ax.set_title(title)
+
+    fig.suptitle(f"Simulation summary – {name}", fontsize=12)
+    out_path = FIG_DIR / f"{name}_fdr_power.png"
+    out_path.parent.mkdir(parents=True, exist_ok=True)
+    fig.savefig(out_path, dpi=200)
+    plt.close(fig)
+    return out_path
+
+
+def make_all_figures(summary_path: Path | None = None) -> list[Path]:
+    """
+    Read summary.csv and create a figure per unique name.
+    """
+    if summary_path is None:
+        summary_path = RESULTS_DIR / "summary.csv"
+    if not summary_path.exists():
+        raise FileNotFoundError("summary.csv not found; run --analyze first.")
+    df = pd.read_csv(summary_path)
+    out_paths: list[Path] = []
+    for name in sorted(df["name"].unique()):
+        out_paths.append(plot_summary_bars(df, name))
+    return out_paths
+
+
 
 def main(argv: List[str] | None = None) -> None:
     args = parse_args(sys.argv[1:] if argv is None else argv)
@@ -271,9 +376,23 @@ def main(argv: List[str] | None = None) -> None:
             df = run_simulation(cfg)
             out = save_raw(df, cfg)
             print(f"[simulate] Wrote {out}")
-        return
+        # fallthrough allowed; you can chain --simulate --analyze --figures in one call
 
-    print("Nothing to do. Try --simulate -c configs/baseline.json or --check-config -c …")
+    if args.analyze:
+        print("[analyze] Aggregating raw trial CSVs...")
+        summary = aggregate_all_raw()
+        out_path = RESULTS_DIR / "summary.csv"
+        print(f"[analyze] Wrote {out_path} with {len(summary)} rows")
+
+    if args.figures:
+        print("[figures] Making summary figures...")
+        paths = make_all_figures()
+        for p in paths:
+            print(f"[figures] Wrote {p}")
+
+    if not (args.check_config or args.simulate or args.analyze or args.figures):
+        print("Nothing to do. Try --simulate -c configs/baseline.json, then --analyze, then --figures.")
+
 
 if __name__ == "__main__":
     main()
