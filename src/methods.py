@@ -428,6 +428,7 @@ def bh_select_marginal(X: np.ndarray, y: np.ndarray, q: float = 0.2, by_correcti
     info = dict(pvals=pvals, q_eff=q_eff, threshold=p_cutoff, m=p, k=len(selected))
     return selected, info
 
+
 def bh_select_whitened(X, y, q=0.2, ridge=1e-8):
     """
     BH after decorrelating marginal z using Sigma^{-1/2}.
