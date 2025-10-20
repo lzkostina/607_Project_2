@@ -59,16 +59,38 @@ DEFAULTS: Dict[str, Any] = {
 }
 
 
+def _coerce_df(df_val):
+    """Return a numeric df with math.inf allowed; raise if invalid."""
+    if df_val is None:
+        return math.inf
+    if isinstance(df_val, (int, float)):
+        # accept positive numbers or inf
+        if df_val > 0 or math.isinf(df_val):
+            return float(df_val)
+        raise ValueError("df must be positive or math.inf.")
+    if isinstance(df_val, str):
+        s = df_val.strip().lower()
+        if s in {"inf", "+inf", "infinity", "+infinity"}:
+            return math.inf
+        # allow numeric strings like "5" or "5.0"
+        try:
+            v = float(s)
+        except ValueError:
+            raise ValueError(f"Could not parse df='{df_val}' as a number or infinity.")
+        if v <= 0:
+            raise ValueError("df must be positive or math.inf.")
+        return v
+    raise TypeError(f"Unsupported type for df: {type(df_val)}")
+
+
 def load_config(path: Path) -> Dict[str, Any]:
-    """
-    Read JSON config and fill in missing fields from DEFAULTS.
-    Required keys: name, n, p. Others default.
-    """
     user = read_json(path)
     for key in ("name", "n", "p"):
         if key not in user:
             raise KeyError(f"Config {path} missing required key: {key!r}")
-    cfg = {**DEFAULTS, **user}  # user overrides defaults
+    cfg = {**DEFAULTS, **user}
+    # NEW: normalize df
+    cfg["df"] = _coerce_df(cfg.get("df", DEFAULTS.get("df", math.inf)))
     return cfg
 
 
@@ -85,6 +107,9 @@ def validate_config(cfg: Dict[str, Any]) -> None:
             raise ValueError("For mode='ar1', set rho (e.g., 0.5).")
         if not (-0.999 < float(rho) < 0.999):
             raise ValueError("rho must be in (-0.999, 0.999) for numerical stability.")
+    df = cfg.get("df", math.inf)
+    if not (df > 0 or math.isinf(df)):
+        raise ValueError("df must be positive or math.inf.")
     n, p, k, q = int(cfg["n"]), int(cfg["p"]), int(cfg["k"]), float(cfg["q"])
     if n <= 0 or p <= 0:
         raise ValueError("n and p must be positive integers.")
@@ -131,6 +156,7 @@ try:
         lasso_path_stats,
         knockoff_select,
         bh_select_marginal,
+        bh_select_whitened
     )
     from src.metrics import fdp_power
 except Exception:
@@ -141,6 +167,7 @@ except Exception:
     knockoff_select = None
     bh_select_marginal = None
     fdp_power= None
+
 
 
 # ------------------------------ Core trial runner -----------------------------
@@ -192,6 +219,14 @@ def run_one_trial(cfg: Dict[str, Any], trial_id: int) -> Dict[str, Any]:
     # 4) BH baseline (marginal)
     sel_bh, info_bh = bh_select_marginal(X, y, q=float(cfg["q"]))
 
+    # BH + BY/log-factor correction
+    sel_by, info_by = bh_select_marginal(X, y, q=float(cfg["q"]), by_correction=True)
+    m_by = fdp_power(true_support, sel_by)
+
+    # BH + whitened z
+    sel_bw, info_bw = bh_select_whitened(X, y, q=float(cfg["q"]))
+    m_bw = fdp_power(true_support, sel_bw)
+
     # 5) Per-trial metrics
     m_kn = fdp_power(true_support, sel_kn)
     m_bh = fdp_power(true_support, sel_bh)
@@ -216,6 +251,14 @@ def run_one_trial(cfg: Dict[str, Any], trial_id: int) -> Dict[str, Any]:
         # BH info
         R_bh=m_bh["R"], TP_bh=m_bh["TP"], V_bh=m_bh["V"],
         FDP_bh=m_bh["FDP"], Power_bh=m_bh["Power"],
+
+        # BY (BH with log-factor)
+        R_by=m_by["R"], TP_by=m_by["TP"], V_by=m_by["V"],
+        FDP_by=m_by["FDP"], Power_by=m_by["Power"],
+
+        # BW (BH with whitened z)
+        R_bw=m_bw["R"], TP_bw=m_bw["TP"], V_bw=m_bw["V"],
+        FDP_bw=m_bw["FDP"], Power_bw=m_bw["Power"],
 
         # extras
         n_pos=len(sel_kn),
