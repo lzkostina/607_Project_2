@@ -1,6 +1,7 @@
 import numpy as np
 from sklearn.linear_model import lasso_path
 from scipy import stats
+from scipy.stats import norm
 
 def knockoffs_equicorr(X: np.ndarray, *, use_true_Sigma: np.ndarray | None = None,seed: int | None = None
         )->tuple[np.ndarray, dict]:
@@ -349,74 +350,107 @@ def knockoff_select(W: np.ndarray, q: float, offset: int = 1) -> tuple[np.ndarra
     }
 
 
-def bh_select_marginal(X: np.ndarray, y: np.ndarray, q: float = 0.2) -> tuple[np.ndarray, dict]:
+def bh_select_marginal(X: np.ndarray, y: np.ndarray, q: float = 0.2, by_correction: bool = False, eps: float = 1e-12):
     """
-    Benjamini–Hochberg baseline using marginal correlations.
+    Benjamini–Hochberg baseline using marginal Pearson correlations (two-sided).
+    Optional Benjamini–Yekutieli log-factor correction via q -> q / S(p).
 
     Parameters
     ----------
-    X : (n, p) ndarray
-        Design matrix (columns normalized or not; normalization handled internally).
-    y : (n,) ndarray
-        Response vector.
-    q : float, default=0.2
+    X : (n, p) array
+        Design (need not be pre-centered/normalized).
+    y : (n,) array
+        Response.
+    q : float in (0,1)
         Target FDR level.
+    by_correction : bool
+        If True, use BY correction: q_eff = q / sum_{i=1}^p 1/i.
+    eps : float
+        Numerical guard to avoid division by zero.
 
     Returns
     -------
-    selected : (k,) ndarray of ints
-        Indices of selected features after BH correction.
+    selected : set[int]
+        Indices selected by BH.
     info : dict
-        {'pvals': p-values array, 'q': q, 'threshold': p-value cutoff, 'm': p, 'k': number selected}
+        {'pvals', 'q_eff', 'threshold', 'm', 'k'}
     """
-    X = np.asarray(X, float)
-    y = np.asarray(y, float).ravel()
+    X = np.asarray(X, dtype=float)
+    y = np.asarray(y, dtype=float).ravel()
     n, p = X.shape
     if y.shape[0] != n:
         raise ValueError("Length of y must match number of rows in X.")
     if not (0 < q < 1):
         raise ValueError("q must be in (0, 1).")
+    if n < 3:
+        # Need at least 3 points for correlation t-test with df = n-2
+        return set(), {"pvals": np.ones(p), "q_eff": q, "threshold": np.nan, "m": p, "k": 0}
 
-    # Center and normalize y
-    y_centered = y - y.mean()
-    y_std = np.linalg.norm(y_centered)
-    if y_std < 1e-12:
-        raise ValueError("y has zero variance.")
-    y_norm = y_centered / y_std
+    # Center
+    yc = y - y.mean()
+    Xc = X - X.mean(axis=0, keepdims=True)
 
-    # Marginal correlations
-    X_centered = X - X.mean(axis=0, keepdims=True)
-    X_std = np.linalg.norm(X_centered, axis=0)
-    X_std = np.where(X_std < 1e-12, 1.0, X_std)
-    X_norm = X_centered / X_std
-    r = X_norm.T @ y_norm  # correlation-like scores
+    # Norms (equivalent to sd * sqrt(n-1)); safe against zeros
+    sy = np.linalg.norm(yc)
+    sx = np.linalg.norm(Xc, axis=0)
+    safe_sy = max(sy, eps)
+    safe_sx = np.where(sx < eps, np.inf, sx)  # columns with ~zero variance → r=0 later
 
-    # Convert to two-sided p-values (using t-distribution under H0)
-    # df = n - 2, t = r * sqrt(df / (1 - r^2))
-    df = max(n - 2, 1)
-    t_stat = r * np.sqrt(df / np.maximum(1e-12, 1 - r**2))
-    pvals = 2 * (1 - stats.t.cdf(np.abs(t_stat), df))
+    # Pearson correlations r_j = <Xc_j, yc> / (||Xc_j|| * ||yc||)
+    r = (Xc.T @ yc) / (safe_sx * safe_sy)
+    r = np.where(np.isfinite(r), r, 0.0)
+    # Clip to open interval for stability in t-transform
+    r = np.clip(r, -1 + 1e-15, 1 - 1e-15)
 
-    # BH procedure
-    m = p
-    sorted_idx = np.argsort(pvals)
-    sorted_p = pvals[sorted_idx]
-    thresh = (np.arange(1, m + 1) / m) * q
-    below = sorted_p <= thresh
+    # Two-sided p-values via t = r * sqrt(df / (1 - r^2)), df = n - 2
+    df = n - 2
+    t_stat = r * np.sqrt(df / np.maximum(1e-15, 1.0 - r * r))
+    pvals = 2.0 * (1.0 - stats.t.cdf(np.abs(t_stat), df))
+
+    # BY/log-factor correction (optional)
+    q_eff = q
+    if by_correction:
+        S_p = np.sum(1.0 / np.arange(1, p + 1, dtype=float))
+        q_eff = min(q / S_p, 1.0)
+
+    # BH step-up
+    order = np.argsort(pvals)
+    pv_sorted = pvals[order]
+    thresh = q_eff * (np.arange(1, p + 1, dtype=float) / p)
+    below = pv_sorted <= thresh
     if not np.any(below):
-        return np.array([], dtype=int), {'pvals': pvals, 'q': q, 'threshold': np.nan, 'm': m, 'k': 0}
+        return set(), {"pvals": pvals, "q_eff": q_eff, "threshold": np.nan, "m": p, "k": 0}
 
-    k_max = np.max(np.where(below)[0]) + 1
-    p_cutoff = sorted_p[k_max - 1]
-    selected = np.flatnonzero(pvals <= p_cutoff)
+    k_max = int(np.max(np.where(below)[0])) + 1
+    p_cutoff = float(pv_sorted[k_max - 1])
+    selected = set(order[:k_max].tolist())
 
-    info = dict(
-        pvals=pvals,
-        q=q,
-        threshold=p_cutoff,
-        m=m,
-        k=len(selected),
-    )
-    return selected.astype(int), info
+    info = dict(pvals=pvals, q_eff=q_eff, threshold=p_cutoff, m=p, k=len(selected))
+    return selected, info
+
+def bh_select_whitened(X, y, q=0.2, ridge=1e-8):
+    """
+    BH after decorrelating marginal z using Sigma^{-1/2}.
+    Assumes columns of X are normalized and noise var=1 (your DGP).
+    """
+    n, p = X.shape
+    z = X.T @ y                     # marginal z (unnormalized but proportional)
+    Sigma = (X.T @ X) / float(n)    # p x p; diag ≈ 1 if columns normalized
+    # Robust inverse sqrt via eigen-decomposition with a tiny ridge
+    w, V = np.linalg.eigh(Sigma + ridge * np.eye(p))
+    w_inv_sqrt = (1.0 / np.sqrt(np.maximum(w, 1e-12)))
+    Sigma_inv_sqrt = (V * w_inv_sqrt) @ V.T
+    z_whiten = Sigma_inv_sqrt @ z
+
+    from scipy.stats import norm
+    pvals = 2.0 * (1.0 - norm.cdf(np.abs(z_whiten)))
+
+    order = np.argsort(pvals)
+    pv_sorted = pvals[order]
+    thresh = q * (np.arange(1, p + 1) / p)
+    k = np.where(pv_sorted <= thresh)[0].max() + 1 if np.any(pv_sorted <= thresh) else 0
+    sel_idx = set(order[:k].tolist())
+    return sel_idx, {"k": k}
+
 
 
