@@ -1,78 +1,61 @@
 import numpy as np
-from typing import Iterable, Sequence
+from typing import Iterable, Sequence, Union
 
-def fdp_power(true_support: Sequence[int], selected: Sequence[int]) -> dict:
+ArrayLike = Union[Sequence[int], np.ndarray]
+
+def _to_index_set(x: ArrayLike) -> set[int]:
+    """
+    Convert a variety of inputs to a set of integer indices.
+    Supports:
+      - iterable of ints (list/tuple/set/ndarray)
+      - boolean ndarray mask -> indices via np.flatnonzero
+    """
+    if isinstance(x, np.ndarray):
+        if x.dtype == bool:
+            return set(np.flatnonzero(x).astype(int).tolist())
+        elif np.issubdtype(x.dtype, np.integer):
+            return set(x.astype(int).tolist())
+        else:
+            # Could be float 0/1 — be strict to avoid silent bugs
+            raise TypeError("Array input must be bool mask or integer dtype.")
+    # Generic iterables (lists/tuples/sets)
+    try:
+        ints = [int(i) for i in x]
+    except Exception as e:
+        raise TypeError("Input must be an iterable of ints or a boolean ndarray.") from e
+    return set(ints)
+
+def fdp_power(true_support: ArrayLike, selected: ArrayLike) -> dict:
     """
     Compute per-trial FDP and Power.
 
-    Definitions (per trial)
-    -----------------------
-    - R  = # selections = |selected|
-    - S* = true support (indices of nonzero effects)
-    - V  = # false discoveries = |selected \ S*|
-    - TP = # true positives    = |selected ∩ S*|
-    - FDP = V / max(R, 1)               (define as 0 when R=0)
-    - Power = TP / max(|S*|, 1)         (NaN if |S*|=0, see below)
-
-    Edge cases
-    ----------
-    - If |S*| = 0 (no signals), Power is undefined. We return np.nan.
-      Aggregators should use np.nanmean over trials.
-
-    Parameters
-    ----------
-    true_support : sequence of ints
-        Indices of true nonzero coefficients.
-    selected : sequence of ints
-        Indices selected by a method.
-
-    Returns
-    -------
-    dict with keys:
-        'R', 'V', 'TP', 'FDP', 'Power'
+    - FDP = V / max(R, 1)
+    - Power = TP / |S*|, and is np.nan when |S*| = 0
     """
-    S = set(map(int, true_support))
-    A = set(map(int, selected))
+    S = _to_index_set(true_support)
+    R = _to_index_set(selected)
 
-    R = len(A)
-    TP = len(A & S)
-    V = R - TP
+    # Basic sanity checks (optional but helpful)
+    if any(i < 0 for i in S | R):
+        raise ValueError("Indices must be non-negative.")
+    # (You can add an optional 'p' to check an upper bound if desired.)
 
-    FDP = V / max(R, 1)
+    TP = len(S & R)
+    Rsize = len(R)
+    V = Rsize - TP
+
+    FDP = (V / Rsize) if Rsize > 0 else 0.0
     Power = (TP / len(S)) if len(S) > 0 else np.nan
 
-    return dict(R=R, V=V, TP=TP, FDP=float(FDP), Power=(float(Power) if np.isfinite(Power) else np.nan))
+    return {"R": Rsize, "TP": TP, "V": V, "FDP": FDP, "Power": Power}
 
 
-def fdr_power_all(true_supports: Iterable[Sequence[int]], selections: Iterable[Sequence[int]]) -> dict:
+def fdr_power_all(true_supports: Iterable[ArrayLike], selections: Iterable[ArrayLike]) -> dict:
     """
-    Aggregate empirical FDR and Power across trials.
-
-    We average the *per-trial* quantities:
-        FDR_hat  = mean(FDP_t)
-        Power_hat= mean(Power_t)   (ignoring trials with no signals via nanmean)
-
-    Parameters
-    ----------
-    true_supports : iterable of sequences of ints
-        One sequence per trial listing true signal indices.
-    selections : iterable of sequences of ints
-        One sequence per trial listing selected indices.
-
-    Returns
-    -------
-    dict with keys:
-        'FDR'         : mean FDP across trials
-        'Power'       : mean Power across trials (nanmean over trials with |S*|>0)
-        'FDR_se'      : std(FDP)/sqrt(T)
-        'Power_se'    : std(Power)/sqrt(T_pos)   (T_pos = # trials with |S*|>0)
-        'per_trial'   : list of dicts from fdp_power_single (for diagnostics)
-        'num_trials'  : total number of trials
-        'num_trials_pos': number of trials with |S*|>0
+    Aggregate empirical FDR and Power across trials (mean of per-trial quantities).
+    Power is averaged with np.nanmean over trials where |S*|>0.
     """
-    FDP_list = []
-    POW_list = []
-    per_trial = []
+    FDP_list, POW_list, per_trial = [], [], []
 
     for S, A in zip(true_supports, selections):
         stats = fdp_power(S, A)
