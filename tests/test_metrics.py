@@ -1,5 +1,6 @@
 import numpy as np
 import pytest
+import math
 
 from src.metrics import fdp_power, fdr_power_all
 
@@ -37,6 +38,22 @@ def test_fdp_power_single_basic_and_edges():
     assert np.isnan(out["Power"])
     assert out["R"] == 2 and out["TP"] == 0 and out["V"] == 2
     assert out["FDP"] == 1.0  # since V=R=2
+
+def test_power_and_fdp_definitions():
+    S = {1,2,3,4}          # true support (k=4)
+    R = {3,4,5}            # selected
+    out = fdp_power(S, R)
+    # TP=2, V=1, R=3 -> FDP=1/3, Power=2/4=0.5
+    assert out["TP"] == 2 and out["V"] == 1 and out["R"] == 3
+    assert abs(out["FDP"] - (1/3)) < 1e-12
+    assert abs(out["Power"] - 0.5) < 1e-12
+
+def test_empty_cases():
+    # No true signals → power undefined (NaN)
+    assert math.isnan(fdp_power(set(), set())["Power"])
+
+    # True signals exist but nothing selected → power = 0
+    assert fdp_power({1, 2}, set())["Power"] == 0.0
 
 
 ############################## fdr_power_all tests ############################

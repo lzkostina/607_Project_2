@@ -204,7 +204,7 @@ def test_bh_select_marginal_no_signal_keeps_rejections_very_low():
     selected, info = bh_select_marginal(X, y, q=0.05)
 
     # Expect very few (usually 0); cap at 5 to be robust across RNG/platforms
-    assert selected.size <= 5
+    assert len(selected) <= 5
     assert info["m"] == p
     # p-values exist and are finite
     assert np.isfinite(info["threshold"]) or np.isnan(info["threshold"])
@@ -220,7 +220,7 @@ def test_bh_select_marginal_strong_signal_detects_support():
     true_support = set(meta["support_indices"])
 
     selected, info = bh_select_marginal(X, y, q=0.2)
-    sel_set = set(selected.tolist())
+    sel_set = selected
 
     tp = len(sel_set & true_support)
     fp = len(sel_set - true_support)
