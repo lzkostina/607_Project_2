@@ -83,14 +83,15 @@ def plot_knockoff_pairs(
 
     fig, ax = plt.subplots(figsize=(7.0, 6.5))
     xs = np.linspace(xmin, xmax, 256)
-    ax.plot(xs, xs, 'k-', lw=1)                    # diagonal
+
+    ax.plot(xs, xs, 'k--', lw=1)  # x = y (dashed)              # diagonal
 
     if stat == "diff":
         # W = Z - Z~
         denom_mask = (Z - Zt) >= t           # below y = x - t
         num_mask   = (Z - Zt) <= -t          # above y = x + t
-        ax.plot(xs, xs - t, 'k--', lw=1)
-        ax.plot(xs, xs + t, 'k--', lw=1)
+        ax.plot(xs, xs - t, 'k-', lw=1)
+        ax.plot(xs, xs + t, 'k-', lw=1)
         ax.fill_between(xs, ymin, xs - t, alpha=0.10, color="gray")
         ax.fill_between(xs, xs + t, ymax, alpha=0.10, color="gray")
         W = Z - Zt
@@ -100,8 +101,8 @@ def plot_knockoff_pairs(
         above = Z < Zt
         denom_mask = below & (Z >= t)        # selected at threshold t
         num_mask   = above & (Zt >= t)       # negative side
-        ax.axvline(t, ls='--', c='k', lw=1)
-        ax.axhline(t, ls='--', c='k', lw=1)
+        #ax.axvline(t, ls='--', c='k', lw=1)
+        #ax.axhline(t, ls='--', c='k', lw=1)
         ax.fill_between([t, xmax], [ymin, ymin], [t, xmax], color="lightgray", alpha=0.6)
         ax.fill_betweenx([t, ymax], [ymin, ymin], [t, ymax], color="lightgray", alpha=0.6)
         W = np.sign(Z - Zt) * np.maximum(Z, Zt)
@@ -112,8 +113,14 @@ def plot_knockoff_pairs(
         ax.scatter(Z[is_sig],  Zt[is_sig],  c='red', marker='s', s=30, alpha=0.9, label="Non-null features")
 
     num_sel = int(denom_mask.sum()); num_neg = int(num_mask.sum())
-    ax.text(0.02, 0.97, f"Selected (W≥t): {num_sel}\nNeg side (W≤−t): {num_neg}",
-            transform=ax.transAxes, ha='left', va='top')
+    ax.text(
+        0.5, 0.7, r"Numerator ($W_j \leq -t$)",
+        transform=ax.transAxes, ha="center", va="center"
+    )
+    ax.text(
+        0.75, 0.3, r"Denominator ($W_j \geq t$)",
+        transform=ax.transAxes, ha="center", va="center"
+    )
 
     ax.set_xlim(xmin, xmax); ax.set_ylim(ymin, ymax); ax.set_aspect('equal', 'box')
     ax.set_xlabel(r"Value of $\lambda$ when $X_j$ enters model")
@@ -138,12 +145,12 @@ def main():
     ap.add_argument("--base-mu", type=float, default=0.8, help="Baseline mean for entry lambdas.")
     ap.add_argument("--base-sigma", type=float, default=0.6, help="Baseline std for entry lambdas.")
     ap.add_argument("--signal-boost", type=float, default=1.2, help="How strongly signals fall below diagonal.")
-    ap.add_argument("--seed", type=int, default=42, help="Random seed.")
+    ap.add_argument("--seed", type=int, default=756, help="Random seed.")
     # plotting/stat
     ap.add_argument("--t", type=float, default=1.5, help="Threshold t.")
     ap.add_argument("--stat", choices=["signed_max","diff"], default="signed_max",
                     help="Definition of W for shading/counts.")
-    ap.add_argument("--title", type=str, default="FDR CONTROL VIA KNOCKOFFS (synthetic)", help="Plot title.")
+    ap.add_argument("--title", type=str, default="Estimated FDP", help="Plot title.")
     ap.add_argument("--out", type=Path, default=Path("artifacts/knockoffs/fig1_synthetic.png"),
                     help="Path to save PNG.")
     ap.add_argument("--save-csv", type=Path, default=None,
