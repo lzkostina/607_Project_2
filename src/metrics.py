@@ -38,8 +38,6 @@ def fdp_power(true_support: ArrayLike, selected: ArrayLike) -> dict:
     # Basic sanity checks (optional but helpful)
     if any(i < 0 for i in S | R):
         raise ValueError("Indices must be non-negative.")
-    # (You can add an optional 'p' to check an upper bound if desired.)
-
     TP = len(S & R)
     Rsize = len(R)
     V = Rsize - TP
