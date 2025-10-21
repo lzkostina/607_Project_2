@@ -1,7 +1,6 @@
 import numpy as np
 import matplotlib.pyplot as plt
 from sklearn.linear_model import lars_path
-from numpy.linalg import cholesky
 from pathlib import Path
 import argparse
 
@@ -48,11 +47,6 @@ def permute_columns(X, rng):
         Xtil[:, j] = Xtil[rng.permutation(n), j]
     return Xtil
 
-
-def ecdf(x):
-    x = np.sort(x)
-    y = np.linspace(0, 1, len(x), endpoint=True)
-    return x, y
 
 def plot_figure2_bar(Z, Zt, sig_idx, null_idx, outpath=None,
                      title="Lasso path entry (Figure 2 style)"):
