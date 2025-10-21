@@ -8,6 +8,7 @@ pipeline with clear reporting.
 ## SETUP DESCRIPTION
 
 All outputs are stored in the `results/` directory.
+Recreated figures are stored in the `artifacts/` directory.  
 
 ### Repository Structure
 ```
@@ -48,7 +49,7 @@ pip install -r requirements.txt
 ```
 
 ### Usage
-Recreate Figure 1:
+#### Recreate Figure 1:
 ```bash
 make fig1
 ```
@@ -59,6 +60,10 @@ make fig1 T=1.2 SIGNAL_BOOST=1.5
 Create similar figure for another set of data parameters
 ```bash
 make fig1 P=num_p K=num_k T=t_value
+```
+#### Recreate Figure 2:
+```bash
+make fig2
 ```
 By running the code above you will be able to recreate figures stored in results/figures
 ### Testing
