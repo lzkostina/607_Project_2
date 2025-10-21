@@ -48,10 +48,18 @@ pip install -r requirements.txt
 ```
 
 ### Usage
+Recreate Figure 1:
 ```bash
-
+make fig1
 ```
-
+Create similar figure for different threshold and stronger signals:
+```bash
+make fig1 T=1.2 SIGNAL_BOOST=1.5
+```
+Create similar figure for another set of data parameters
+```bash
+make fig1 P=num_p K=num_k T=t_value
+```
 By running the code above you will be able to recreate figures stored in results/figures
 ### Testing
 
