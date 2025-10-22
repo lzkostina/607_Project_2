@@ -22,7 +22,7 @@ def test_partial_and_aggregate():
     S1 = [1,2,3,4]; sel1 = [1,3]
     # trial2: select 1 true and 1 false
     S2 = [5,6]; sel2 = [6, 100]
-    agg = fdr_power_all([sel1, sel2], [S1, S2])
+    agg = fdr_power_all([S1, S2], [sel1, sel2])
     # trial1: FDP=0/2=0, Power=2/4=0.5
     # trial2: FDP=1/2=0.5, Power=1/2=0.5
     assert abs(agg["FDR"] - (0 + 0.5)/2) < 1e-12

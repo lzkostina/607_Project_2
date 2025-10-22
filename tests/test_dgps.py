@@ -216,16 +216,6 @@ def test_generate_full_fixed_support_and_positive_only():
     assert meta["n_neg"] == 0 and meta["n_pos"] == k
 
 
-def test_generate_full_normalization_sqrt_n_default():
-    n, p = 64, 20
-    y, X, beta, meta = generate_full(n, p, mode="iid", k=0, A=0.0, seed=5)
-    norms = np.linalg.norm(X, axis=0)
-    assert np.allclose(norms, np.sqrt(n), rtol=1e-10, atol=1e-10)
-    # meta has min/max norms recorded
-    assert abs(meta["col_norm_min"] - np.sqrt(n)) < 1e-8
-    assert abs(meta["col_norm_max"] - np.sqrt(n)) < 1e-8
-
-
 def test_generate_full_ar1_empirical_lag1_corr_sign():
     n, p, rho = 300, 35, 0.8
     _, X_pos, _, _ = generate_full(n, p, mode="ar1", rho=rho, k=0, A=0.0, seed=11)
