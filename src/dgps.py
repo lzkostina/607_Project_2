@@ -191,6 +191,17 @@ def generate_errors(
     eps = t * scale
     return eps
 
+def scale_cols_unit_l2(X: np.ndarray) -> np.ndarray:
+    """
+    Center columns, then scale so each column has ||X_j||_2 = 1 (not sqrt(n)).
+    This makes Var(X_j) ≈ 1/n and keeps SNR moderate with A fixed.
+    """
+    X = X - X.mean(axis=0, keepdims=True)
+    norms = np.linalg.norm(X, axis=0, keepdims=True)
+    norms = np.where(norms == 0.0, 1.0, norms)
+    X = X / norms
+    return X
+
 def generate_full(
     n: int,
     p: int,
@@ -290,6 +301,7 @@ def generate_full(
         n=n, p=p, mode=mode, rho=rho, seed=seed_design,
         normalize=normalize, norm_target=norm_target
     )
+    X = scale_cols_unit_l2(X)
 
     # diagnostics for meta
     col_norms = np.linalg.norm(X, axis=0)
