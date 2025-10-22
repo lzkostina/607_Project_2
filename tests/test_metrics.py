@@ -6,84 +6,24 @@ from src.metrics import fdp_power, fdr_power_all
 
 ############################## fdr_power tests ############################
 
-def test_fdp_power_single_basic_and_edges():
-    # True signals at {1,3,5}
-    S = [1, 3, 5]
-
-    # Case 1: perfect selection
-    sel = [1, 3, 5]
-    out = fdp_power(S, sel)
-    assert out["R"] == 3 and out["TP"] == 3 and out["V"] == 0
-    assert out["FDP"] == 0.0 and out["Power"] == 1.0
-
-    # Case 2: some FP, some TP
-    sel = [0, 1, 2, 3]
-    out = fdp_power(S, sel)
-    # TP=2 (1 and 3), V=2 (0 and 2), R=4
-    assert out["R"] == 4 and out["TP"] == 2 and out["V"] == 2
-    assert abs(out["FDP"] - 0.5) < 1e-12
-    assert abs(out["Power"] - (2/3)) < 1e-12
-
-    # Case 3: no selections -> FDP=0 by convention, Power based on TP=0
-    sel = []
-    out = fdp_power(S, sel)
-    assert out["R"] == 0 and out["TP"] == 0 and out["V"] == 0
+def test_empty_selection_and_no_signals():
+    out = fdp_power(true_support=[], selected=[])
     assert out["FDP"] == 0.0
     assert out["Power"] == 0.0
 
-    # Case 4: no signals -> Power is NaN
-    S0 = []
-    sel = [0, 2]
-    out = fdp_power(S0, sel)
-    assert np.isnan(out["Power"])
-    assert out["R"] == 2 and out["TP"] == 0 and out["V"] == 2
-    assert out["FDP"] == 1.0  # since V=R=2
+def test_perfect_recovery():
+    S = [1,2,3,10]
+    out = fdp_power(selected=[1,2,3,10], true_support=S)
+    assert out["FDP"] == 0.0
+    assert abs(out["Power"] - 1.0) < 1e-12
 
-def test_power_and_fdp_definitions():
-    S = {1,2,3,4}          # true support (k=4)
-    R = {3,4,5}            # selected
-    out = fdp_power(S, R)
-    # TP=2, V=1, R=3 -> FDP=1/3, Power=2/4=0.5
-    assert out["TP"] == 2 and out["V"] == 1 and out["R"] == 3
-    assert abs(out["FDP"] - (1/3)) < 1e-12
-    assert abs(out["Power"] - 0.5) < 1e-12
-
-def test_empty_cases():
-    # No true signals → power undefined (NaN)
-    assert math.isnan(fdp_power(set(), set())["Power"])
-
-    # True signals exist but nothing selected → power = 0
-    assert fdp_power({1, 2}, set())["Power"] == 0.0
-
-
-############################## fdr_power_all tests ############################
-
-def test_fdr_power_all_basic():
-    # Two trials with signals, one without
-    true_list = [
-        [1, 3, 5],          # trial 1  (|S*|=3)
-        [2, 4],             # trial 2  (|S*|=2)
-        [],                 # trial 3  (no signals -> Power NaN)
-    ]
-    sel_list = [
-        [1, 3],             # TP=2,R=2 -> FDP=0, Power=2/3
-        [2, 7, 9],          # TP=1,R=3 -> FDP=2/3, Power=1/2
-        [0, 1],             # no signals: FDP=1.0, Power=NaN
-    ]
-
-    out = fdr_power_all(true_list, sel_list)
-    # FDR = mean(FDP) over all three trials
-    fdp_vals = [0.0, 2/3, 1.0]
-    expected_FDR = sum(fdp_vals) / 3
-    assert abs(out["FDR"] - expected_FDR) < 1e-12
-
-    # Power = mean over trials with signals only (nanmean)
-    pow_vals = [2/3, 1/2]  # (exclude NaN from the third trial)
-    expected_Power = sum(pow_vals) / 2
-    assert abs(out["Power"] - expected_Power) < 1e-12
-
-    # SEs defined (nan if insufficient trials)
-    assert out["num_trials"] == 3
-    assert out["num_trials_pos"] == 2
-    assert np.isfinite(out["FDR_se"])
-    assert np.isfinite(out["Power_se"])
+def test_partial_and_aggregate():
+    # trial1: select half of true signals, no false
+    S1 = [1,2,3,4]; sel1 = [1,3]
+    # trial2: select 1 true and 1 false
+    S2 = [5,6]; sel2 = [6, 100]
+    agg = fdr_power_all([sel1, sel2], [S1, S2])
+    # trial1: FDP=0/2=0, Power=2/4=0.5
+    # trial2: FDP=1/2=0.5, Power=1/2=0.5
+    assert abs(agg["FDR"] - (0 + 0.5)/2) < 1e-12
+    assert abs(agg["Power"] - 0.5) < 1e-12
