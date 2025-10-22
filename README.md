@@ -20,15 +20,22 @@ Recreated figures are stored in the `artifacts/` directory.
 │ ├── methods.py # statistical methods being evaluated
 │ ├── metrics.py # performance measure calculations
 │ └── simulation.py # main simulation orchestration
-├── configs/  
+├── configs/  # .json files with parameters  
 │ ├── baseline.json
-│ └── ar1_05.json
+│ └── ....
 ├── run_experiment.py # main script (runs all simulations)
 ├── results/
 │ ├── raw/ # raw simulation output (*.csv, *.pkl)
-│ └── figures/ # stores generated plots
+│ └── figures/ 
+├── scripts/
+│ ├── plot_knockoff_pairs.py # script to recreate figure 1 
+│ ├── plot_figure_2.py # script to recreate figure 2
+│ └── ...
+├── tools/
+│ └── generate_grid.py # creates .json files with parameter sets needed for particular experiment
+├── artifacts/ # contains recreated plots
 ├── tests/ # simple pytest sanity checks
-├── requirements.txt
+├── requirements.txt 
 ├── Makefile
 ├── ADEMP.md # simulation design document 
 ├── ANALYSIS.md #  
@@ -49,28 +56,34 @@ pip install -r requirements.txt
 ```
 
 ### Usage
-#### Recreate Figure 1:
+All main steps are automated via the Makefile.
+#### Run the full simulation pipeline:
+```bash
+make all
+```
+### Run only the §3.3.1 Row 1 experiment:
+```bash
+make simulate RUN_331=1
+```
+#### Create all plots
+```bash
+make figures
+```
+#### You can also run individual figures:
 ```bash
 make fig1
-```
-Create similar figure for different threshold and stronger signals:
-```bash
-make fig1 T=1.2 SIGNAL_BOOST=1.5
-```
-Create similar figure for another set of data parameters
-```bash
-make fig1 P=num_p K=num_k T=t_value
-```
-#### Recreate Figure 2:
-```bash
 make fig2
 ```
-By running the code above you will be able to recreate figures stored in results/figures
+#### To delete generated files:
+```bash
+make clean
+```
+
 ### Testing
 
 This project includes basic tests to ensure pipeline correctness.
 
 To run all tests:
 ```bash
-pytest tests/
+make test
 ```
