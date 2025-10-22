@@ -1,7 +1,7 @@
 PY            ?= python
 PYTHONPATH    ?= .
 SCRIPT_FIG_1  ?= scripts/plot_knockoff_pairs.py
-SCRIPT_FIG_2  ?= scripts/figure2_lasso_path.py
+SCRIPT_FIG_2  ?= scripts/plot_figure_2.py
 OUT_FIG_1     ?= artifacts/knockoffs/fig1_synthetic.png
 OUT_FIG_2     ?= artifacts/knockoffs/figure2_lasso_path.png
 SEED          ?= 1
