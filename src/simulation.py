@@ -244,20 +244,21 @@ def run_one_trial(cfg: Dict[str, Any], trial_id: int) -> Dict[str, Any]:
 
         # Knockoff+ info
         method="Knockoff+",
-        R_kn=m_kn["R"], TP_kn=m_kn["TP"], V_kn=m_kn["V"],
+        #R_kn=m_kn["R"], TP_kn=m_kn["TP"], V_kn=m_kn["V"],
+        R_kn=m_kn["R"], TP_kn=m_kn["T"], V_kn=m_kn["V"],
         FDP_kn=m_kn["FDP"], Power_kn=m_kn["Power"],
         T_kn=info_sel.get("T", None), FDPhat_kn=info_sel.get("fdp_hat", None),
 
         # BH info
-        R_bh=m_bh["R"], TP_bh=m_bh["TP"], V_bh=m_bh["V"],
+        R_bh=m_bh["R"], TP_bh=m_bh["T"], V_bh=m_bh["V"],
         FDP_bh=m_bh["FDP"], Power_bh=m_bh["Power"],
 
         # BY (BH with log-factor)
-        R_by=m_by["R"], TP_by=m_by["TP"], V_by=m_by["V"],
+        R_by=m_by["R"], TP_by=m_by["T"], V_by=m_by["V"],
         FDP_by=m_by["FDP"], Power_by=m_by["Power"],
 
         # BW (BH with whitened z)
-        R_bw=m_bw["R"], TP_bw=m_bw["TP"], V_bw=m_bw["V"],
+        R_bw=m_bw["R"], TP_bw=m_bw["T"], V_bw=m_bw["V"],
         FDP_bw=m_bw["FDP"], Power_bw=m_bw["Power"],
 
         # extras
