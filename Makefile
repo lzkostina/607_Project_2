@@ -15,8 +15,8 @@ SEED0  ?= 1021
 ONLY_SCRIPT    ?=
 
 # Simulation scripts (from scripts/)
-SIM_SCRIPT_ONE ?= scripts/simulate_one.py
-SIM_SCRIPT_ALL ?= scripts/simulate_all.py
+#SIM_SCRIPT_ONE ?= scripts/simulate_one.py
+SIM_SCRIPT_ALL ?= src/simulation.py
 
 SIM_SCRIPT_331 ?= scripts/sec331_row1_knockoffplus_equi.py
 OUT_331        ?= $(SUMM_DIR)/sec331_row1_knockoffplus_equi.csv
@@ -61,13 +61,9 @@ _simulate_dispatch:
 			PYTHONPATH=$(PYTHONPATH) $(PY) $(SIM_SCRIPT_331); \
 		fi; \
 	elif [ -f "$(SIM_SCRIPT_ALL)" ]; then \
-		echo "Running batch via $(SIM_SCRIPT_ALL)"; \
-		PYTHONPATH=$(PYTHONPATH) $(PY) $(SIM_SCRIPT_ALL) \
-			--configs $(CONFIG_DIR) \
-			--replicates $(REPS) \
-			--seed0 $(SEED0) \
-			--out-dir $(SUMM_DIR) \
-			--save-configs $(ARTIFACTS_DIR)/params; \
+    	echo "Running batch via $(SIM_SCRIPT_ALL)"; \
+    	PYTHONPATH=$(PYTHONPATH) $(PY) $(SIM_SCRIPT_ALL) \
+       		--simulate $(foreach c,$(CONFIGS),-c $(c)); \
 	elif [ -f "$(SIM_SCRIPT_ONE)" ]; then \
 		echo "Running per-config via $(SIM_SCRIPT_ONE)"; \
 		$(MAKE) -j $$(nproc 2>/dev/null || sysctl -n hw.ncpu 2>/dev/null || echo 1) $(SUMMARIES); \
