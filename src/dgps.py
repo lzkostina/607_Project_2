@@ -161,10 +161,19 @@ def generate_errors(
     # ---- validation ----
     if not isinstance(n, int) or n <= 0:
         raise ValueError("n must be a positive integer.")
-    if not math.isfinite(df) and df is not math.inf:
+    #OLD VERSION
+    # if not math.isfinite(df) and df is not math.inf:
+    #     raise ValueError("df must be positive or math.inf.")
+    # if math.isfinite(df) and df <= 0:
+    #     raise ValueError("df must be positive when finite.")
+    # NEW VERSION
+    # we need it for joblib
+    df = float(df)  # ensure scalar
+
+    # Accept df = math.inf or df = np.inf or df > 0
+    if not (df > 0.0 or math.isinf(df)):
         raise ValueError("df must be positive or math.inf.")
-    if math.isfinite(df) and df <= 0:
-        raise ValueError("df must be positive when finite.")
+
     # enforce unit variance for this reproduction (keep it strict but tolerant)
     if abs(float(sigma2) - 1.0) > 1e-12:
         raise ValueError("sigma2 must be 1.0 for this project.")

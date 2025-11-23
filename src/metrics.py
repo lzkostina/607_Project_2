@@ -29,8 +29,6 @@ from numpy.typing import ArrayLike
 #     POWER = (T / k) if k > 0 else 0.0
 #     return {"FDP": FDP, "Power": POWER, "R": R, "T": T}
 
-
-
 def _to_index_array(x: Any) -> np.ndarray:
     """
     Convert various 'selected'/'support' representations to a 1D int array of indices.

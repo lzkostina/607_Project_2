@@ -1,0 +1,60 @@
+Running batch via src/simulation.py
+[simulate] Running config: ar1_05
+[simulate] Wrote results/raw/ar1_05_trials.csv
+[simulate] Running config: ar1_rho0p5_p1000_n3000_k10_A2p5
+[simulate] Wrote results/raw/ar1_rho0p5_p1000_n3000_k10_A2p5_trials.csv
+[simulate] Running config: ar1_rho0p5_p1000_n3000_k10_A3p5
+[simulate] Wrote results/raw/ar1_rho0p5_p1000_n3000_k10_A3p5_trials.csv
+[simulate] Running config: ar1_rho0p5_p1000_n3000_k10_A5p0
+[simulate] Wrote results/raw/ar1_rho0p5_p1000_n3000_k10_A5p0_trials.csv
+[simulate] Running config: ar1_rho0p5_p1000_n3000_k30_A2p5
+[simulate] Wrote results/raw/ar1_rho0p5_p1000_n3000_k30_A2p5_trials.csv
+[simulate] Running config: ar1_rho0p5_p1000_n3000_k30_A3p5
+[simulate] Wrote results/raw/ar1_rho0p5_p1000_n3000_k30_A3p5_trials.csv
+[simulate] Running config: ar1_rho0p5_p1000_n3000_k30_A5p0
+[simulate] Wrote results/raw/ar1_rho0p5_p1000_n3000_k30_A5p0_trials.csv
+[simulate] Running config: ar1_rho0p5_p1000_n3000_k60_A2p5
+[simulate] Wrote results/raw/ar1_rho0p5_p1000_n3000_k60_A2p5_trials.csv
+[simulate] Running config: ar1_rho0p5_p1000_n3000_k60_A3p5
+[simulate] Wrote results/raw/ar1_rho0p5_p1000_n3000_k60_A3p5_trials.csv
+[simulate] Running config: ar1_rho0p5_p1000_n3000_k60_A5p0
+[simulate] Wrote results/raw/ar1_rho0p5_p1000_n3000_k60_A5p0_trials.csv
+[simulate] Running config: ar1_rho0p9_p1000_n3000_k10_A2p5
+[simulate] Wrote results/raw/ar1_rho0p9_p1000_n3000_k10_A2p5_trials.csv
+[simulate] Running config: ar1_rho0p9_p1000_n3000_k10_A3p5
+[simulate] Wrote results/raw/ar1_rho0p9_p1000_n3000_k10_A3p5_trials.csv
+[simulate] Running config: ar1_rho0p9_p1000_n3000_k10_A5p0
+[simulate] Wrote results/raw/ar1_rho0p9_p1000_n3000_k10_A5p0_trials.csv
+[simulate] Running config: ar1_rho0p9_p1000_n3000_k30_A2p5
+[simulate] Wrote results/raw/ar1_rho0p9_p1000_n3000_k30_A2p5_trials.csv
+[simulate] Running config: ar1_rho0p9_p1000_n3000_k30_A3p5
+[simulate] Wrote results/raw/ar1_rho0p9_p1000_n3000_k30_A3p5_trials.csv
+[simulate] Running config: ar1_rho0p9_p1000_n3000_k30_A5p0
+[simulate] Wrote results/raw/ar1_rho0p9_p1000_n3000_k30_A5p0_trials.csv
+[simulate] Running config: ar1_rho0p9_p1000_n3000_k60_A2p5
+[simulate] Wrote results/raw/ar1_rho0p9_p1000_n3000_k60_A2p5_trials.csv
+[simulate] Running config: ar1_rho0p9_p1000_n3000_k60_A3p5
+[simulate] Wrote results/raw/ar1_rho0p9_p1000_n3000_k60_A3p5_trials.csv
+[simulate] Running config: ar1_rho0p9_p1000_n3000_k60_A5p0
+[simulate] Wrote results/raw/ar1_rho0p9_p1000_n3000_k60_A5p0_trials.csv
+[simulate] Running config: baseline
+[simulate] Wrote results/raw/baseline_trials.csv
+[simulate] Running config: iid_p1000_n3000_k10_A2p5
+[simulate] Wrote results/raw/iid_p1000_n3000_k10_A2p5_trials.csv
+[simulate] Running config: iid_p1000_n3000_k10_A3p5
+[simulate] Wrote results/raw/iid_p1000_n3000_k10_A3p5_trials.csv
+[simulate] Running config: iid_p1000_n3000_k10_A5p0
+[simulate] Wrote results/raw/iid_p1000_n3000_k10_A5p0_trials.csv
+[simulate] Running config: iid_p1000_n3000_k30_A2p5
+[simulate] Wrote results/raw/iid_p1000_n3000_k30_A2p5_trials.csv
+[simulate] Running config: iid_p1000_n3000_k30_A3p5
+[simulate] Wrote results/raw/iid_p1000_n3000_k30_A3p5_trials.csv
+[simulate] Running config: iid_p1000_n3000_k30_A5p0
+[simulate] Wrote results/raw/iid_p1000_n3000_k30_A5p0_trials.csv
+[simulate] Running config: iid_p1000_n3000_k60_A2p5
+[simulate] Wrote results/raw/iid_p1000_n3000_k60_A2p5_trials.csv
+[simulate] Running config: iid_p1000_n3000_k60_A3p5
+[simulate] Wrote results/raw/iid_p1000_n3000_k60_A3p5_trials.csv
+[simulate] Running config: iid_p1000_n3000_k60_A5p0
+[simulate] Wrote results/raw/iid_p1000_n3000_k60_A5p0_trials.csv
+Simulation complete.

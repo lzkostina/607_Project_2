@@ -1,8 +1,8 @@
 {
-  "name": "iid_p1000_n3000_k30_A3p5",
+  "name": "ar1_rho0p9_p1000_n3000_k30_A3p5",
   "n": 3000,
   "p": 1000,
-  "mode": "iid",
+  "mode": "ar1",
   "rho": 0.9,
   "k": 30,
   "A": 3.5,
@@ -11,6 +11,6 @@
   "norm_target": "sqrt_n",
   "q": 0.2,
   "n_alphas": 150,
-  "n_trials": 1000,
-  "seed": 2025
+  "n_trials": 600,
+  "seed": 1019
 }

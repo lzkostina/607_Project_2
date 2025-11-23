@@ -1,0 +1,19 @@
+{
+  "mode": "ar1",
+  "rho": 0.5,
+  "k": 20,
+  "A": 3.5,
+  "df": Infinity,
+  "normalize": true,
+  "norm_target": "sqrt_n",
+  "q": 0.2,
+  "n_alphas": 150,
+  "eps": 0.001,
+  "coef_tol": 1e-09,
+  "max_iter": 10000,
+  "n_trials": 5,
+  "seed": 2024,
+  "name": "ar1_05",
+  "n": 400,
+  "p": 100
+}

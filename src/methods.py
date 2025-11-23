@@ -4,6 +4,7 @@ from sklearn.linear_model import lars_path
 from scipy import stats
 from scipy.stats import norm
 from typing import Dict
+import warnings
 
 def knockoffs_equicorr(X: np.ndarray, *, use_true_Sigma: np.ndarray | None = None,seed: int | None = None
         )->tuple[np.ndarray, dict]:
@@ -41,16 +42,18 @@ def knockoffs_equicorr(X: np.ndarray, *, use_true_Sigma: np.ndarray | None = Non
         # Use sample correlation-like Gram (since columns are normalized, diag ~ 1)
         Sigma = (X.T @ X) / float(n)
     else:
-        Sigma = np.asarray(use_true_Sigma, dtype=np.float64)
+        Sigma = np.array(use_true_Sigma, dtype=float, copy=True)
         if Sigma.shape != (p, p):
             raise ValueError("use_true_Sigma must have shape (p, p).")
 
     # Symmetrize
-    Sigma = 0.5 * (Sigma + Sigma.T)
+    Sigma += Sigma.T
+    Sigma *= 0.5
 
     # numerical stability
     evals, evecs = np.linalg.eigh(Sigma)
     lambda_min = float(np.min(evals))
+
     if lambda_min < -1e-8:
         raise ValueError(f"Sigma appears indefinite: min eigenvalue = {lambda_min:.3e}")
 
@@ -104,10 +107,17 @@ def knockoffs_equicorr(X: np.ndarray, *, use_true_Sigma: np.ndarray | None = Non
     # It is possible that QR returns fewer columns if rank-deficient; guard that:
     if U0.shape != (n - p, p):
         raise RuntimeError("Failed to build a full p-column orthonormal U0 in R^{n-p}.")
-    W = U0 @ sqrtM  # (n-p) x p
 
+    W = U0 @ sqrtM  # (n-p) x p
     # --- Assemble knockoffs: Xk = X A + Q_perp W  (n x p) ---
     X_knock = X @ A + Q_perp @ W
+    if not np.all(np.isfinite(X_knock)):
+        warnings.warn(
+            "Non-finite entries detected in knockoff matrix; applying nan_to_num.",
+            RuntimeWarning,
+        )
+        X_knock = np.nan_to_num(X_knock, nan=0.0, posinf=0.0, neginf=0.0)
+
     meta = dict(
         Sigma=Sigma_psd,
         s=float(s),
@@ -145,15 +155,34 @@ def lasso_path_stats(
     assert X.shape == Xk.shape
     n, p = X.shape
 
-    # Ensure we actually preprocessed: (light checks)
-    # (No-op if you already did this upstream; keep if you want extra safety.)
     Xc  = X - X.mean(axis=0, keepdims=True)
     Xkc = Xk - Xk.mean(axis=0, keepdims=True)
-    Xc /= (Xc.std(axis=0, ddof=1, keepdims=True) + 1e-12)
-    Xkc/= (Xkc.std(axis=0, ddof=1, keepdims=True) + 1e-12)
+
+    std_x = np.std(Xc, axis=0, ddof=1, keepdims=True)
+    std_xk = np.std(Xkc, axis=0, ddof=1, keepdims=True)
+
+    Xc = Xc / np.maximum(std_x, 1e-12)
+    Xkc = Xkc / np.maximum(std_xk, 1e-12)
+
     y0  = y - y.mean()
 
+    # OLD VERSION
     X_aug = np.hstack([Xc, Xkc])
+
+    # NEW VERSION
+
+    # X_aug = np.empty((n, 2 * p), dtype=float)
+    # X_aug[:, :p] = Xc
+    # X_aug[:, p:] = Xkc
+
+    # Extra numeric safety
+    if not np.all(np.isfinite(X_aug)) or not np.all(np.isfinite(y0)):
+        warnings.warn(
+            "Non-finite values in X_aug or y0; applying nan_to_num before LARS.",
+            RuntimeWarning,
+        )
+        X_aug = np.nan_to_num(X_aug, nan=0.0, posinf=0.0, neginf=0.0)
+        y0 = np.nan_to_num(y0, nan=0.0, posinf=0.0, neginf=0.0)
 
     # lars_path signature without normalize/fit_intercept (preprocessed data!)
     # method="lasso" gives the Lasso/LARS path with alphas on correlation scale
@@ -162,10 +191,16 @@ def lasso_path_stats(
 
     # First-entry alpha per feature
     nz = (np.abs(coefs) > coef_tol)
-    entry = np.zeros(2 * p)
-    for j in range(2 * p):
-        idx = np.argmax(nz[j])
-        entry[j] = alphas[idx] if nz[j].any() else 0.0
+    # OLD VERSION
+    # entry = np.zeros(2 * p)
+    # for j in range(2 * p):
+    #     idx = np.argmax(nz[j])
+    #     entry[j] = alphas[idx] if nz[j].any() else 0.0
+
+    # NEW VERSION
+    has_nonzero = nz.any(axis=1)
+    first_idx = nz.argmax(axis=1)
+    entry = np.where(has_nonzero, alphas[first_idx], 0.0)
 
     Z  = entry[:p]
     Zt = entry[p:]
@@ -173,7 +208,34 @@ def lasso_path_stats(
 
     return {"Z": Z, "Z_tilde": Zt, "W": W}
 
+####################################### helper functions to improve knockoff_threshold ################################
+def _threshold_vectorized(W: np.ndarray, candidates: np.ndarray, q: float, offset: int) -> float:
+    """Fully vectorized threshold computation (best for small p)."""
+    W_col = W[:, np.newaxis]
+    t_row = candidates[np.newaxis, :]
 
+    num_pos = np.sum(W_col >= t_row, axis=0)
+    num_neg = np.sum(W_col <= -t_row, axis=0)
+
+    fdp_hat = (offset + num_neg) / np.maximum(1, num_pos)
+
+    valid_idx = np.where(fdp_hat <= q)[0]
+
+    if valid_idx.size == 0:
+        return float("nan")
+
+    return float(candidates[valid_idx[0]])
+
+def _threshold_loop(W: np.ndarray, candidates: np.ndarray, q: float, offset: int) -> float:
+    """Loop-based threshold computation (better memory for large p)."""
+    for t in candidates:
+        num = offset + np.count_nonzero(W <= -t)
+        den = max(1, int(np.count_nonzero(W >= t)))
+        if num / den <= q:
+            return float(t)
+    return float("nan")
+
+#################################################################################################################
 def knockoff_threshold(W: np.ndarray, q: float, offset: int = 1) -> float:
     """
     Compute the Knockoff / Knockoff+ data-dependent threshold.
@@ -214,19 +276,31 @@ def knockoff_threshold(W: np.ndarray, q: float, offset: int = 1) -> float:
 
     # Clean and build candidate grid t > 0 from data
     w_clean = W[np.isfinite(W)]
-    candidates = np.sort(np.unique(np.abs(w_clean[w_clean != 0.0])))
-    if candidates.size == 0:
+    w_abs = np.abs(w_clean[w_clean != 0.0])
+    if w_abs.size == 0:
         return float("nan")
+
+    candidates = np.sort(np.unique(w_abs))
 
     # Scan in increasing t to find the first that satisfies the inequality
     # (earliest t gives the *smallest* set of selections that achieves FDP_hat <= q)
-    for t in candidates:
-        num = offset + np.count_nonzero(W <= -t)
-        den = max(1, int(np.count_nonzero(W >= t)))
-        fdp_hat = num / den
-        if fdp_hat <= q:
-            return float(t)
+    # OLD VERSION
+    # for t in candidates:
+    #     num = offset + np.count_nonzero(W <= -t)
+    #     den = max(1, int(np.count_nonzero(W >= t)))
+    #     fdp_hat = num / den
+    #     if fdp_hat <= q:
+    #         return float(t)
 
+    # NEW VERSION
+    p = len(W)
+    n_candidates = len(candidates)
+
+    # Adaptive algorithm selection based on problem size
+    if p < 500 and n_candidates < 500:
+        return _threshold_vectorized(W, candidates, q, offset)
+    else:
+        return _threshold_loop(W, candidates, q, offset)
     # No feasible t -> select none
     return float("nan")
 
@@ -253,25 +327,35 @@ def knockoff_select(W: np.ndarray, q: float, offset: int = 1) -> tuple[np.ndarra
     """
 
     W = np.asarray(W, float)
-    tgrid = np.unique(np.abs(W)[np.abs(W) > 0.0])
-    tgrid.sort()
+    # OLD VERSION
+    # tgrid = np.unique(np.abs(W)[np.abs(W) > 0.0])
+    # tgrid.sort()
+    #
+    # T = None;
+    # fdp_hat_T = None
+    # for t in tgrid:
+    #     num = offset + np.sum(W <= -t)  # Knockoff+ numerator
+    #     den = max(1, int(np.sum(W >= t)))  # denominator
+    #     fdp_hat = num / den
+    #     if fdp_hat <= q:
+    #         T = float(t);
+    #         fdp_hat_T = float(fdp_hat)
+    #         break
+    #
+    # if T is None:
+    #     return np.array([], dtype=int), {"T": None, "fdp_hat": None}
+    # NEW VERSION
+    T = knockoff_threshold(W, q, offset)
 
-    T = None;
-    fdp_hat_T = None
-    for t in tgrid:
-        num = offset + np.sum(W <= -t)  # Knockoff+ numerator
-        den = max(1, int(np.sum(W >= t)))  # denominator
-        fdp_hat = num / den
-        if fdp_hat <= q:
-            T = float(t);
-            fdp_hat_T = float(fdp_hat)
-            break
-
-    if T is None:
+    if np.isnan(T):
         return np.array([], dtype=int), {"T": None, "fdp_hat": None}
 
+    num = offset + np.sum(W <= -T)
+    den = max(1, int(np.sum(W >= T)))
+    fdp_hat = float(num / den)
+
     selected = np.where(W >= T)[0].astype(int)
-    return selected, {"T": T, "fdp_hat": fdp_hat_T}
+    return selected, {"T": T, "fdp_hat": fdp_hat}
 
 
 
@@ -302,7 +386,9 @@ def bh_select_marginal(X: np.ndarray, y: np.ndarray, q: float = 0.2, by_correcti
     """
     X = np.asarray(X, dtype=float)
     y = np.asarray(y, dtype=float).ravel()
+
     n, p = X.shape
+
     if y.shape[0] != n:
         raise ValueError("Length of y must match number of rows in X.")
     if not (0 < q < 1):
@@ -318,6 +404,7 @@ def bh_select_marginal(X: np.ndarray, y: np.ndarray, q: float = 0.2, by_correcti
     # Norms (equivalent to sd * sqrt(n-1)); safe against zeros
     sy = np.linalg.norm(yc)
     sx = np.linalg.norm(Xc, axis=0)
+
     safe_sy = max(sy, eps)
     safe_sx = np.where(sx < eps, np.inf, sx)  # columns with ~zero variance → r=0 later
 
@@ -343,6 +430,7 @@ def bh_select_marginal(X: np.ndarray, y: np.ndarray, q: float = 0.2, by_correcti
     pv_sorted = pvals[order]
     thresh = q_eff * (np.arange(1, p + 1, dtype=float) / p)
     below = pv_sorted <= thresh
+
     if not np.any(below):
         return set(), {"pvals": pvals, "q_eff": q_eff, "threshold": np.nan, "m": p, "k": 0}
 
@@ -361,10 +449,12 @@ def bh_select_whitened(X, y, q=0.2, ridge=1e-8):
     """
     n, p = X.shape
     z = X.T @ y                     # marginal z (unnormalized but proportional)
+
     Sigma = (X.T @ X) / float(n)    # p x p; diag ≈ 1 if columns normalized
+
     # Robust inverse sqrt via eigen-decomposition with a tiny ridge
     w, V = np.linalg.eigh(Sigma + ridge * np.eye(p))
-    w_inv_sqrt = (1.0 / np.sqrt(np.maximum(w, 1e-12)))
+    w_inv_sqrt = 1.0 / np.sqrt(np.maximum(w, 1e-12))
     Sigma_inv_sqrt = (V * w_inv_sqrt) @ V.T
     z_whiten = Sigma_inv_sqrt @ z
 
@@ -373,9 +463,19 @@ def bh_select_whitened(X, y, q=0.2, ridge=1e-8):
     order = np.argsort(pvals)
     pv_sorted = pvals[order]
     thresh = q * (np.arange(1, p + 1) / p)
-    k = np.where(pv_sorted <= thresh)[0].max() + 1 if np.any(pv_sorted <= thresh) else 0
-    sel_idx = set(order[:k].tolist())
-    return sel_idx, {"k": k}
+
+
+    # OLD VERSION
+    # k = np.where(pv_sorted <= thresh)[0].max() + 1 if np.any(pv_sorted <= thresh) else 0
+    # sel_idx = set(order[:k].tolist())
+    # return sel_idx, {"k": k}
+
+    #NEW VERSION
+    valid_idx = np.where(pv_sorted <= thresh)[0]
+    k = int(valid_idx.max()) + 1 if valid_idx.size > 0 else 0
+
+    return set(order[:k].tolist()), {"k": k}
+
 
 
 

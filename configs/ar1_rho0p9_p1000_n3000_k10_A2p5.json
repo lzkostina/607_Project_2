@@ -1,0 +1,16 @@
+{
+  "name": "ar1_rho0p9_p1000_n3000_k10_A2p5",
+  "n": 3000,
+  "p": 1000,
+  "mode": "ar1",
+  "rho": 0.9,
+  "k": 10,
+  "A": 2.5,
+  "df": null,
+  "normalize": true,
+  "norm_target": "sqrt_n",
+  "q": 0.2,
+  "n_alphas": 150,
+  "n_trials": 600,
+  "seed": 1019
+}

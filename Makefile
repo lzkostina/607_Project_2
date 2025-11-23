@@ -5,17 +5,19 @@ CONFIG_DIR    ?= configs
 RESULTS_DIR   ?= results
 ARTIFACTS_DIR ?= artifacts
 SUMM_DIR      ?= $(RESULTS_DIR)/summaries
-TABLE_DIR     ?= $(RESULTS_DIR)/tables
+TABLE_DIR     ?= $(RESULTS_DIR)/raw
 FIG_DIR       ?= $(RESULTS_DIR)/figures
+PROFILE_DIR      ?= $(RESULTS_DIR)/profiling
+PROFILE_CONFIG   ?= $(CONFIG_DIR)/ar1_rho0p5_p1000_n3000_k10_A3p5.json
+PROFILE_PROF_OUT ?= $(PROFILE_DIR)/prof_ar1_rho0p5_p1000_n3000_k10_A3p5.prof
+
 
 # Simulation controls
 REPS   ?= 600
 SEED0  ?= 1021
 
-ONLY_SCRIPT    ?=
 
 # Simulation scripts (from scripts/)
-#SIM_SCRIPT_ONE ?= scripts/simulate_one.py
 SIM_SCRIPT_ALL ?= src/simulation.py
 
 SIM_SCRIPT_331 ?= scripts/sec331_row1_knockoffplus_equi.py
@@ -31,9 +33,10 @@ OUT_FIG_2     ?= $(ARTIFACTS_DIR)/knockoffs/figure2_lasso_path.png
 CONFIGS    := $(wildcard $(CONFIG_DIR)/*.json)
 COND_IDS   := $(notdir $(basename $(CONFIGS)))
 SUMMARIES  := $(addsuffix .csv,$(addprefix $(SUMM_DIR)/,$(COND_IDS)))
-AGG_TABLE  := $(TABLE_DIR)/aggregate.csv
+#AGG_TABLE  := $(TABLE_DIR)/aggregate.csv
+AGG_TABLE :=  $(wildcard $(TABLE_DIR)/*.csv)
 
-.PHONY: all simulate simulate331 analyze figures clean test help
+.PHONY: all simulate simulate331 analyze figures clean test help profile complexity benchmark parallel stability-check
 
 all: simulate analyze figures
 
@@ -84,6 +87,47 @@ analyze: $(AGG_TABLE)
 figures: fig1 fig2
 	@echo "Figures complete."
 
+# --------- Profiling / Complexity / Benchmark / Stability ----------
+
+# Run profiling on a representative simulation (writes .prof file)
+profile:
+	@mkdir -p $(PROFILE_DIR)
+	@echo "Profiling baseline config: $(PROFILE_CONFIG)"
+	@PYTHONPATH=$(PYTHONPATH) $(PY) -m cProfile \
+		-o $(PROFILE_PROF_OUT) \
+		src/simulation.py --simulate -c $(PROFILE_CONFIG)
+	@echo "Wrote profile to $(PROFILE_PROF_OUT)"
+
+# Run computational complexity analysis (timing vs n) + log-log plot
+complexity:
+	@mkdir -p $(PROFILE_DIR) $(FIG_DIR)
+	@echo "Running computational complexity experiment (timing vs n)..."
+	@PYTHONPATH=$(PYTHONPATH) $(PY) scripts/complexity_baseline.py
+	@PYTHONPATH=$(PYTHONPATH) $(PY) scripts/plot_complexity.py
+	@echo "Complexity results: $(PROFILE_DIR)/complexity_baseline.csv"
+	@echo "Complexity plot:    $(FIG_DIR)/complexity_baseline.png"
+
+# Run timing comparison: sequential vs parallel (baseline vs optimized)
+# (expects you to implement scripts/benchmark_runtime.py)
+benchmark:
+	@echo "Running runtime benchmark (sequential vs parallel)..."
+	@PYTHONPATH=$(PYTHONPATH) $(PY) scripts/benchmark_runtime.py
+	@echo "Benchmark complete."
+
+# Run optimized simulation with parallelization enabled
+parallel:
+	@echo "Running optimized simulation with parallelization..."
+	@PYTHONPATH=$(PYTHONPATH) $(PY) src/simulation.py \
+		--simulate -c $(PROFILE_CONFIG) --n-jobs -1
+	@echo "Parallel simulation complete."
+
+# Check for numerical warnings / convergence issues across conditions
+# (expects you to implement scripts/stability_check.py)
+stability-check:
+	@echo "Running numerical stability / warnings check..."
+	@PYTHONPATH=$(PYTHONPATH) $(PY) scripts/stability_check.py
+	@echo "Stability check complete."
+
 test:
 	@echo "Running tests..."
 	@PYTHONPATH=$(PYTHONPATH) pytest -q
@@ -96,15 +140,21 @@ clean:
 
 help:
 	@echo "Targets:"
-	@echo "  make all        - Run complete pipeline (simulate + analyze + figures)"
-	@echo "  make simulate   - Run simulations for all configs in $(CONFIG_DIR)/"
-	#@echo "  make analyze    - Process raw results into summary tables"
-	@echo "  make figures    - Build all figures (keeps your existing figure scripts)"
-	@echo "  make clean      - Remove generated files"
-	@echo "  make test       - Run test suite (pytest)"
+	@echo "  make all           - Run complete pipeline (simulate + analyze + figures)"
+	@echo "  make simulate      - Run simulations for all configs in $(CONFIG_DIR)/"
+	@echo "  make analyze       - Process raw results into summary tables"
+	@echo "  make figures       - Build all figures (keeps your existing figure scripts)"
+	@echo "  make clean         - Remove generated files"
+	@echo "  make test          - Run test suite (pytest)"
+	@echo "  make profile       - Run cProfile on a representative simulation config"
+	@echo "  make complexity    - Run timing vs n and build complexity plot"
+	@echo "  make benchmark     - Run sequential vs parallel runtime benchmark"
+	@echo "  make parallel      - Run optimized simulation with parallelization"
+	@echo "  make stability-check - Run numerical stability / warnings check"
 	@echo ""
 	@echo "Overridable vars: PY, PYTHONPATH, CONFIG_DIR, RESULTS_DIR, ARTIFACTS_DIR,"
 	@echo "                  REPS, SEED0, SCRIPT_FIG_1/2, SCRIPT_FIG_SIM"
+
 
 # --------- Pattern rules / recipes ----------
 

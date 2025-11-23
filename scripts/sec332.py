@@ -4,8 +4,9 @@ from tqdm import tqdm
 from scipy.stats import t
 import matplotlib.pyplot as plt
 
-
+import knockpy
 from knockpy import dgp, knockoffs, knockoff_stats
+
 
 # ---------- config ----------
 seed = 123
@@ -91,6 +92,25 @@ def make_knockoffs(X, Sigma):
     else:
         raise RuntimeError("Unknown knockpy sampling API for GaussianSampler.")
 
+def compute_W_lcd(X, Xk, y):
+    """
+    Lasso coefficient-difference (LCD) knockoff statistic,
+    implemented via knockpy.knockoff_stats.LassoStatistic.
+    This corresponds to the 'lasso' / 'lcd' choice in KnockoffFilter.
+    """
+    stat = knockoff_stats.LassoStatistic()
+    # zstat="coef" → use lasso coefficients
+    # antisym="cd" → |beta_j| - |beta_j^k| (coefficient difference)
+    # group_agg irrelevant here since groups=None in non-grouped case
+    W = stat.fit(
+        X, Xk, y,
+        zstat="coef",
+        antisym="cd",
+        group_agg="sum",   # or "avg" – just rescales, doesn’t change selections
+        cv_score=False,
+    )
+    return W
+
 # ---------- main simulation ----------
 out = []
 for k in tqdm(ks, desc="k grid"):
@@ -104,7 +124,9 @@ for k in tqdm(ks, desc="k grid"):
         Xk = make_knockoffs(X, Sigma)
 
         # Lasso coefficient difference W stats
-        W = knockoff_stats.lasso_coef_diff(X, Xk, y, alphas=None, fit_intercept=True, random_state=0)
+        #W = knockoff_stats.LassoStatistic(X, Xk, y, alphas=None, fit_intercept=True, random_state=0)
+
+        W = compute_W_lcd(X, Xk, y)
 
         # data-dependent threshold for Knockoff (<=) and Knockoff+ (<)
         def knock_select(W, q, plus=False):
