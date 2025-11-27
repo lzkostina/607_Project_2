@@ -104,8 +104,11 @@ complexity:
 	@echo "Running computational complexity experiment (timing vs n)..."
 	@PYTHONPATH=$(PYTHONPATH) $(PY) scripts/complexity_baseline.py
 	@PYTHONPATH=$(PYTHONPATH) $(PY) scripts/plot_complexity.py
-	@echo "Complexity results: $(PROFILE_DIR)/complexity_baseline.csv"
-	@echo "Complexity plot:    $(FIG_DIR)/complexity_baseline.png"
+	@PYTHONPATH=$(PYTHONPATH) $(PY) scripts/plot_complexity_comparison.py
+	@echo "Complexity results:         $(PROFILE_DIR)/complexity_baseline.csv"
+	@echo "Baseline complexity plot:   $(FIG_DIR)/complexity_baseline.png"
+	@echo "Comparison complexity plot: $(FIG_DIR)/complexity_comparison.png"
+
 
 # Run timing comparison: sequential vs parallel (baseline vs optimized)
 # (expects you to implement scripts/benchmark_runtime.py)
@@ -117,9 +120,9 @@ benchmark:
 # Run optimized simulation with parallelization enabled
 parallel:
 	@echo "Running optimized simulation with parallelization..."
-	@PYTHONPATH=$(PYTHONPATH) $(PY) src/simulation.py \
-		--simulate -c $(PROFILE_CONFIG) --n-jobs -1
+	@PYTHONPATH=$(PYTHONPATH) $(PY) scripts/run_parallel.py
 	@echo "Parallel simulation complete."
+
 
 # Check for numerical warnings / convergence issues across conditions
 # (expects you to implement scripts/stability_check.py)
