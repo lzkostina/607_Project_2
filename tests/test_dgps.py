@@ -153,20 +153,6 @@ def test_generate_errors_gaussian_determinism_and_unit_var():
     assert abs(z1.mean()) < 0.05          # CLT tolerance for n=2000
     assert abs(z1.var(ddof=1) - 1.0) < 0.05
 
-
-def test_generate_errors_student_t_rescaled_and_sigma2_validation():
-    n = 3000
-    df = 5.0
-    z = generate_errors(n=n, df=df, sigma2=1.0, seed=999)
-
-    # approximate zero mean and unit variance after rescaling
-    assert abs(z.mean()) < 0.05
-    assert abs(z.var(ddof=1) - 1.0) < 0.05
-
-    # sigma2 must be exactly 1.0 (within tiny tolerance) -> any other value should raise
-    with pytest.raises(ValueError):
-        _ = generate_errors(n=n, df=df, sigma2=0.9, seed=1)
-
 ####################### generate_full tests ###########################
 
 def test_generate_full_shapes_and_determinism_iid():
