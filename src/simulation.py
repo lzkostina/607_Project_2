@@ -351,7 +351,7 @@ def run_one_trial(cfg: Dict[str, Any], trial_id: int,precomputed: Optional[Dict[
     if df is None or not (df > 0 or math.isinf(df)):
         df = math.inf
 
-    print("DEBUG in worker:", trial_id, "df in cfg:", cfg.get("df"), "df used:", df, file=sys.stderr)
+    #print("DEBUG in worker:", trial_id, "df in cfg:", cfg.get("df"), "df used:", df, file=sys.stderr)
 
     y, X, beta, meta = generate_full(
         int(cfg["n"]), int(cfg["p"]),
