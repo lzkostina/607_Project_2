@@ -32,9 +32,9 @@ This corresponds to $20 + 15 + 10 = 45$ different settings.
 ```bash
 make all
 ```
-Each individual setting requires approximately 30 minutes, and running all settings locally would take more than a day.  
-Since the computational cost is primarily determined by $(n, p, n\_\text{trials})$ rather than by $(k, A)$, I selected
-one representative configuration for detailed profiling.
+Each individual setting requires approximately 30 minutes, and running all settings locally would take a little less 
+than a day. Since the computational cost is primarily determined by $(n, p, n\_\text{trials})$ rather than by $(k, A)$, 
+I selected one representative configuration for detailed profiling.
 
 ---
 
@@ -48,17 +48,12 @@ configuration for profiling.I decided to study one of the mentioned settings mor
 ```bash
 PYTHONPATH=. python src/simulation.py --simulate -c configs/ar1_rho0p5_p1000_n3000_k10_A3p5.json
 ````
-Timing results (from shell time):
-* real   <!!!!!DO NOT FORGET TO PLUG IN!!!!!!>
-* user   <!!!!!DO NOT FORGET TO PLUG IN!!!!!!>
-* sys    <!!!!!DO NOT FORGET TO PLUG IN!!!!!!>
-
 Summary:
-Total baseline runtime: <!!!!!DO NOT FORGET TO PLUG IN!!!!!!>
-Runtime for one set of parameters 30:06 minutes
+- Total baseline runtime: $\approx 23$ hours
+- Runtime for one set of parameters 30:06 minutes
 
 ## 2. Runtime Profiling (One Representative Parameter Set)
-We profiled the baseline simulation for a single representative configuration. Config used:
+I restricted baseline simulation for a single representative configuration. Config used:
 configs/ar1_rho0p5_p1000_n3000_k10_A3p5.json, using the same code path as the Unit 2 study.
 * $n = 3000$
 * $p = 1000$
@@ -96,7 +91,7 @@ A few notable lower-level helpers also appear near the top:
 * _lars_path_solver is by far the biggest individual function.
 * QR and eigenvalue decomposition are substantial and called many times.
 * Knockoff construction (knockoffs_equicorr) has a large cumulative time but smaller direct time because it delegates to heavy linear algebra routines.
-*Lasso path (lasso_path_stats) has moderate direct time but high cumulative due to solver calls.
+* Lasso path (lasso_path_stats) has moderate direct time but high cumulative due to solver calls.
 
 
 ### Interpretation of profiler output
