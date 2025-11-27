@@ -456,3 +456,12 @@ to parallelize. This design pattern greatly simplified the entire pipeline.
 | 4000 | 50       | 244.75                     | 121.60                      |
 | 4500 | 50       | 306.80                     | 176.57                      |
 | 5000 | 50       | 364.75                     | 229.66                      |
+
+#### Regression tests 
+I implemented `tests/test_regression.py` to compare the baseline and optimized pipelines by conducting the following
+tests:
+- Run the same configuration with the old sequential pipeline and the optimized one (with precomputation, 
+vectorized threshold).
+- Check that key summary metrics agree within noise.
+- Verify that parallel execution produces statistically equivalent results to the sequential run.
+These tests provide evidence that the optimizations preserve results of the original simulation.
