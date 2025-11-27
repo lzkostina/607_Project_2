@@ -130,75 +130,42 @@ def generate_design(
     return X
 
 
-def generate_errors(
-    n: int,
-    df: float = math.inf,
-    sigma2: float = 1.0,
-    seed: int | None = None
-) -> np.ndarray:
+def generate_errors(n: int, df: float = math.inf, sigma2: float = 1.0, seed: int | None = None) -> np.ndarray:
     """
-    Generate an error vector z of length n with unit variance.
+    Generate noise vector z of length n with variance sigma2.
 
-    Default is Gaussian N(0, 1). If df is finite, draws from Student-t(df),
-    recenters, and rescales to have sample variance ≈ 1.
-
-    Parameters
-    ----------
-    n : int
-        Number of observations (must be > 0).
-    df : float, default: math.inf
-        Degrees of freedom. Use math.inf for Gaussian; else df > 0 for t.
-    sigma2 : float, default: 1.0
-        Target variance. For this project we only support sigma2 == 1.0.
-    seed : int | None
-        Random seed for determinism.
-
-    Returns
-    -------
-    eps : np.ndarray, shape (n,), dtype float64
-        Zero-mean (approximately), unit-variance noise.
+    - If df == inf: standard Gaussian N(0, sigma2)
+    - If finite df: t(df) scaled to have Var = sigma2
     """
-    # ---- validation ----
-    if not isinstance(n, int) or n <= 0:
-        raise ValueError("n must be a positive integer.")
-    #OLD VERSION
-    # if not math.isfinite(df) and df is not math.inf:
-    #     raise ValueError("df must be positive or math.inf.")
-    # if math.isfinite(df) and df <= 0:
-    #     raise ValueError("df must be positive when finite.")
-    # NEW VERSION
-    # we need it for joblib
-    df = float(df)  # ensure scalar
-
-    # Accept df = math.inf or df = np.inf or df > 0
-    if not (df > 0.0 or math.isinf(df)):
-        raise ValueError("df must be positive or math.inf.")
-
-    # enforce unit variance for this reproduction (keep it strict but tolerant)
-    if abs(float(sigma2) - 1.0) > 1e-12:
-        raise ValueError("sigma2 must be 1.0 for this project.")
+    if n <= 0:
+        raise ValueError("n must be positive.")
+    if sigma2 <= 0:
+        raise ValueError("sigma2 must be positive.")
 
     rng = np.random.default_rng(seed)
 
-    # ---- Gaussian branch ----
-    if df is math.inf:
-        return rng.standard_normal(size=n).astype(np.float64)
+    if math.isinf(df):
+        # Gaussian noise
+        z = rng.normal(loc=0.0, scale=math.sqrt(sigma2), size=n)
+    else:
+        df = float(df)
+        if df <= 2:
+            # variance of t(df) is df/(df-2), so df<=2 => infinite variance
+            raise ValueError("df must be > 2 for finite-variance t noise.")
+        # standard t with Var = df/(df-2); rescale to target variance sigma2
+        t_raw = rng.standard_t(df, size=n)
+        scale = math.sqrt(sigma2 * (df - 2.0) / df)
+        z = t_raw * scale
 
-    # ---- Student-t branch (rescale to unit variance) ----
-    t = rng.standard_t(df, size=n).astype(np.float64)
+    # Hard safety check
+    if not np.all(np.isfinite(z)):
+        raise RuntimeError(
+            f"generate_errors produced non-finite entries: "
+            f"nan={int(np.isnan(z).sum())}, inf={int(np.isinf(z).sum())}"
+        )
 
-    # center
-    t -= t.mean()
+    return z.astype(np.float64)
 
-    # scale to sample variance ≈ 1 (guard against pathological zero variance)
-    cur_var = t.var(ddof=1)
-    if cur_var <= EPS:
-        # extremely unlikely; fall back to Gaussian(0,1)
-        return rng.standard_normal(size=n).astype(np.float64)
-
-    scale = 1.0 / math.sqrt(cur_var)
-    eps = t * scale
-    return eps
 
 def scale_cols_unit_l2(X: np.ndarray) -> np.ndarray:
     """
