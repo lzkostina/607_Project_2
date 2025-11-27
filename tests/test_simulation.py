@@ -107,12 +107,29 @@ def fake_generate_full(n, p, mode="iid", rho=None, df=np.inf, k=5, A=3.0, normal
     meta = {"support_indices": set(map(int, supp))}
     return y, X, beta, meta
 
-def fake_build_knockoffs_equicorr(X, seed=0):
-    rng = np.random.default_rng(seed)
-    # Simple: knockoff features as permuted columns + tiny noise
-    perm = rng.permutation(X.shape[1])
-    Xk = X[:, perm] + 1e-6 * rng.standard_normal(X.shape)
-    return Xk, {"perm": perm.tolist()}
+import numpy as np
+
+def fake_build_knockoffs_equicorr(X, *, use_true_Sigma=None, seed=None):
+    """
+    Lightweight stand-in for knockoffs_equicorr.
+
+    It accepts the same keyword arguments as the real function
+    (at least the ones used in run_one_trial), but returns a simple,
+    deterministic knockoff matrix and a small info dict.
+    """
+    X = np.asarray(X)
+    n, p = X.shape
+
+    # For testing we don't care about real knockoffs; just match shapes.
+    Xk = -X  # or np.zeros_like(X), or X.copy()
+
+    info = {
+        "method": "fake_equicorr",
+        "seed": seed,
+        "used_true_Sigma": use_true_Sigma is not None,
+    }
+    return Xk, info
+
 
 def fake_lasso_path_stats(X, y, Xk, n_alphas=100, eps=1e-3, coef_tol=1e-9, max_iter=10_000):
     # Very cheap "W": signed correlations difference
@@ -138,11 +155,11 @@ def fake_fdp_power_single(true_support, selected):
     true_support = set(true_support)
     selected = set(selected)
     R = len(selected)
-    TP = len(true_support & selected)
-    V = R - TP
+    T = len(true_support & selected)
+    V = R - T
     FDP = (V / R) if R > 0 else 0.0
-    Power = (TP / len(true_support)) if true_support else 0.0
-    return {"R": R, "TP": TP, "V": V, "FDP": FDP, "Power": Power}
+    Power = (T / len(true_support)) if true_support else 0.0
+    return {"R": R, "T": T, "V": V, "FDP": FDP, "Power": Power}
 
 # ------------------------------ Tests -----------------------------------------
 
@@ -166,7 +183,7 @@ def test_run_one_trial_monkeypatched(monkeypatch, tmp_path):
         "q": 0.2,
         "n_alphas": 50,
         "n_trials": 2,
-        "seed": 2025,
+        "seed": 1126,
         "normalize": True,
         "norm_target": "sqrt_n",
     }
