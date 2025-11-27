@@ -337,6 +337,13 @@ def run_one_trial(cfg: Dict[str, Any], trial_id: int,precomputed: Optional[Dict[
     OPTIMIZATION: If precomputed['Sigma_true'] is provided, use it in knockoffs
     construction instead of computing X^T X / n eigendecomposition.
     """
+    # print(
+    #     "DEBUG worker trial", trial_id,
+    #     "generate_full is", generate_full,
+    #     "knockoffs_equicorr is", knockoffs_equicorr,
+    #     file=sys.stderr,
+    # )
+
     # 1) Data generation
     ds_seed = int(cfg["seed"]) + int(trial_id)
 
@@ -355,6 +362,16 @@ def run_one_trial(cfg: Dict[str, Any], trial_id: int,precomputed: Optional[Dict[
         seed=ds_seed,
     )
 
+    # if trial_id == 0:
+    #     print(
+    #         "DEBUG data finiteness:",
+    #         "nan X:", int(np.isnan(X).sum()),
+    #         "inf X:", int(np.isinf(X).sum()),
+    #         "nan y:", int(np.isnan(y).sum()),
+    #         "inf y:", int(np.isinf(y).sum()),
+    #         file=sys.stderr,
+    #     )
+
     true_support = meta["support_indices"]
 
     # 2) Knockoffs with optional precomputed Sigma
@@ -368,6 +385,14 @@ def run_one_trial(cfg: Dict[str, Any], trial_id: int,precomputed: Optional[Dict[
         use_true_sigma = precomputed["Sigma_true"]
 
     Xk, info_k = knockoffs_equicorr(X, use_true_Sigma=use_true_sigma, seed=seed_kn)
+    if trial_id == 0:
+        print(
+            "DEBUG Xk finiteness:",
+            "nan Xk:", int(np.isnan(Xk).sum()),
+            "inf Xk:", int(np.isinf(Xk).sum()),
+            file=sys.stderr,
+        )
+
     # SAFETY CHECK: if theoretical Sigma causes non-finite knockoffs, fall back
     if not np.all(np.isfinite(Xk)):
         print("NAN DETECTED in Xk before fallback (trial:", trial_id, ")", file=sys.stderr)
@@ -411,6 +436,19 @@ def run_one_trial(cfg: Dict[str, Any], trial_id: int,precomputed: Optional[Dict[
     m_bh = fdp_power(true_support, sel_bh)
     m_by = fdp_power(true_support, sel_by)
     m_bw = fdp_power(true_support, sel_bw)
+
+    if trial_id == 0:
+        print("DEBUG trial0 in worker: ",
+              "R_kn=", m_kn["R"],
+              "R_bh=", m_bh["R"],
+              "R_by=", m_by["R"],
+              "R_bw=", m_bw["R"],
+              file=sys.stderr)
+        print("DEBUG trial0 W stats:",
+              "min", float(np.min(W)),
+              "max", float(np.max(W)),
+              "#nonzero", int(np.sum(W != 0.0)),
+              file=sys.stderr)
 
     # 6) Return results
     return dict(
@@ -461,6 +499,8 @@ def run_simulation_parallel(
 
     OPTIMIZATION: Precomputed Sigma is shared across all workers (read-only).
     """
+    print("[DEBUG par] cfg A=", cfg["A"], "k=", cfg["k"], "q=", cfg["q"], file=sys.stderr)
+
     n_trials = int(cfg["n_trials"])
     n_jobs = cfg.get("n_jobs", -1)
     backend = cfg.get("backend", "loky")
@@ -496,6 +536,8 @@ def run_simulation_parallel(
 def run_simulation_sequential(cfg: Dict[str, Any], verbose: bool = True,precomputed: Optional[Dict[str, Any]] = None
 ) -> pd.DataFrame:
     """Sequential simulation with optional precomputed matrices."""
+    print("[DEBUG seq] cfg A=", cfg["A"], "k=", cfg["k"], "q=", cfg["q"], file=sys.stderr)
+
     try:
         from tqdm import trange
         iterator = trange(int(cfg["n_trials"]), desc=f"Sim {cfg['name']}") if verbose else range(int(cfg["n_trials"]))
@@ -515,11 +557,14 @@ def run_simulation(cfg: Dict[str, Any], parallel: bool = True, verbose: bool = T
     OPTIMIZATION: Automatically precomputes Sigma if beneficial.
     """
     # Precompute scenario-level matrices
-    precomputed = None
-    if cfg.get("precompute_sigma", True):
-        precomputed = precompute_scenario_matrices(cfg)
-        if verbose and precomputed.get("use_sigma", False):
-            print(f"  [optimization] Using precomputed theoretical Sigma (rank={precomputed.get('Sigma_rank', '?')})")
+    # precomputed = None
+    # if cfg.get("precompute_sigma", True):
+    #     precomputed = precompute_scenario_matrices(cfg)
+    #     if verbose and precomputed.get("use_sigma", False):
+    #         print(f"  [optimization] Using precomputed theoretical Sigma (rank={precomputed.get('Sigma_rank', '?')})")
+
+    # TEMP: disable all precomputed Sigma to see if it affects the bug
+    precomputed = {"use_sigma": False}
 
     if parallel and HAS_JOBLIB and cfg.get("n_jobs", -1) != 1:
         return run_simulation_parallel(cfg, verbose=verbose, precomputed=precomputed)
